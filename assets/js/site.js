@@ -30,7 +30,7 @@
      받는 주소를 바꾸려면 RECEIVER 만 고치면 됩니다.
      끄고 싶으면 ENDPOINT 를 빈 문자열로 두세요 — 메일 앱 열기로 되돌아갑니다.
      ══════════════════════════════════════════════════════════ */
-  const RECEIVER = 'jnk@jnkcorp.co.kr';
+  const RECEIVER = 'info@frameofframe.com';
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
 
   const html   = document.documentElement;
