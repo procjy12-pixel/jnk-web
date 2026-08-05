@@ -16,6 +16,23 @@
 (() => {
   'use strict';
 
+  /* ══════════════════════════════════════════════════════════
+     견적 문의 수신 설정
+
+     FormSubmit — 가입도 서버도 필요 없습니다. 이 주소로 POST 하면
+     RECEIVER 메일함으로 문의가 들어옵니다.
+
+     ★ 첫 사용 전 딱 한 번:
+       사이트에서 견적 문의를 아무 내용으로 한 번 보내면
+       RECEIVER 메일함으로 활성화 확인 메일이 옵니다.
+       그 링크를 눌러야 이후 문의가 들어오기 시작합니다.
+
+     받는 주소를 바꾸려면 RECEIVER 만 고치면 됩니다.
+     끄고 싶으면 ENDPOINT 를 빈 문자열로 두세요 — 메일 앱 열기로 되돌아갑니다.
+     ══════════════════════════════════════════════════════════ */
+  const RECEIVER = 'jnk@jnkcorp.co.kr';
+  const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
+
   const html   = document.documentElement;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const $  = (s, r = document) => r.querySelector(s);
@@ -261,7 +278,46 @@
 
   const smooth = () => (reduce ? 'auto' : 'smooth');
 
-  form.addEventListener('submit', (e) => {
+  /* 서버로 보냅니다. 실패하면 메일 앱 열기로 되돌아가므로 문의가 사라지지 않습니다. */
+  async function send(body) {
+    if (!ENDPOINT) return false;
+    const payload = {
+      _subject: `[견적문의] ${val('#fBrand') || val('#fName')} — ${checked('qty')[0]}`,
+      _template: 'table',
+      _captcha: 'false',
+      '품목': checked('type').join(', '),
+      '수량': checked('qty')[0] || '',
+      '희망 출고': checked('when')[0] || '미기재',
+      '브랜드': val('#fBrand') || '미정',
+      '담당자': val('#fName'),
+      '연락처': val('#fTel'),
+      '이메일': val('#fMail') || '-',
+      '내용': val('#fMemo') || '-',
+      '요약': body
+    };
+    if (val('#fMail')) payload._replyto = val('#fMail');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 12000);
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+        signal: ctl.signal
+      });
+      if (!res.ok) return false;
+      // 주의: FormSubmit 은 실패해도 HTTP 200 을 돌려주고 본문에 success:"false" 를 담습니다.
+      // 상태 코드로 판단하면 실패를 접수 완료로 표시하게 됩니다.
+      const j = await res.json().catch(() => null);
+      return !!j && String(j.success) === 'true';
+    } catch {
+      return false;                     // 오프라인·차단·타임아웃
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     errEl.textContent = '';
 
@@ -286,7 +342,26 @@
     doneBox.textContent = body;
     const subject = `[견적문의] ${val('#fBrand') || val('#fName')} — ${checked('qty')[0]}`;
     $('#doneMail').href =
-      `mailto:jnk@jnkcorp.co.kr?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      `mailto:${RECEIVER}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    const btn = form.querySelector('button[type="submit"]');
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '보내는 중…';
+
+    const ok = await send(body);
+
+    btn.disabled = false;
+    btn.textContent = label;
+
+    // 접수 성공/실패에 따라 안내 문구와 버튼 구성을 바꿉니다
+    $('#doneTitle').textContent = ok ? '문의가 접수됐습니다' : '견적 요청서가 준비됐습니다';
+    $('#doneLede').textContent  = ok
+      ? '담당자가 확인하는 대로 회신드립니다. 아래는 보내신 내용입니다.'
+      : '지금 전송이 되지 않았습니다. 아래 내용을 메일로 보내시거나 복사해 전달해 주세요.';
+    $('#doneBadge').textContent = ok ? 'SENT' : 'READY';
+    $('#doneMail').classList.toggle('btn--red', !ok);
+    $('#doneMail').textContent = ok ? '메일로도 보내기' : '메일로 보내기';
 
     form.style.display = 'none';
     done.classList.add('is-on');

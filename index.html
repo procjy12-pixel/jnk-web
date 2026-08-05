@@ -654,6 +654,7 @@
     </h2>
     <p class="lead" data-rv="fade" style="--d:120ms;margin-top:20px;max-width:44em">
       품목과 수량을 골라주시면 <b style="color:#fff">견적과 함께 진행 일정</b>을 정리해 회신드립니다.
+      보내주신 내용은 담당자 메일로 바로 접수됩니다.
     </p>
 
     <form class="form" id="quoteForm" style="margin-top:clamp(40px,5vw,64px)" novalidate>
@@ -742,7 +743,7 @@
       </div>
 
       <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
-        <button type="submit" class="btn btn--red btn--lg">견적 요청서 만들기</button>
+        <button type="submit" class="btn btn--red btn--lg">견적 문의 보내기</button>
         <a class="btn btn--lg" href="tel:0222528766">02-2252-8766</a>
         <span class="sm" id="formErr" role="alert" aria-live="polite"></span>
       </div>
@@ -751,9 +752,9 @@
     <!-- 완료 패널 -->
     <div class="done" id="done" aria-live="polite">
       <div class="card" style="margin-top:36px">
-        <div class="card__n">READY</div>
-        <h3 class="d3 card__t">견적 요청서가 준비됐습니다</h3>
-        <p class="card__x">아래 내용을 메일로 보내시거나 복사해서 전화·메시지로 전달해 주세요.</p>
+        <div class="card__n" id="doneBadge">READY</div>
+        <h3 class="d3 card__t" id="doneTitle">견적 요청서가 준비됐습니다</h3>
+        <p class="card__x" id="doneLede">아래 내용을 메일로 보내시거나 복사해서 전화·메시지로 전달해 주세요.</p>
         <div class="done__box" id="doneBox"></div>
         <div class="done__cta">
           <a class="btn btn--red" id="doneMail" href="#">메일로 보내기</a>
