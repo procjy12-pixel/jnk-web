@@ -318,7 +318,9 @@ body::after {
 }
 .scene__steps { position: relative; z-index: 2; width: 100%; }
 .scene__step {
-  position: absolute; left: 0; right: 0; max-width: 620px;
+  /* 절대배치의 기준은 부모의 패딩 박스입니다. left:0 으로 두면 .wrap 의
+     좌우 여백(--pad)을 건너뛰고 화면 끝에 붙어버립니다. 여백만큼 밀어 줍니다. */
+  position: absolute; left: var(--pad); right: var(--pad); max-width: 620px;
   opacity: 0; transform: translateY(22px);
   transition: opacity .7s var(--ease), transform .7s var(--ease);
   pointer-events: none;
@@ -521,7 +523,8 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
 .fx-off .scene__pin { position: relative; height: auto; padding: clamp(70px,9vw,120px) 0; display: block; }
 .fx-off .scene__steps { position: relative; }
 .fx-off .scene__step {
-  position: relative; opacity: 1; transform: none; max-width: none;
+  position: relative; left: 0; right: auto;
+  opacity: 1; transform: none; max-width: none;
   padding-bottom: 44px; pointer-events: auto;
 }
 .fx-off .scene__step + .scene__step { border-top: 1px solid var(--line); padding-top: 44px; }
