@@ -1,0 +1,17 @@
+# jnkcorp.co.kr
+User-agent: *
+Allow: /
+
+# 네이버
+User-agent: Yeti
+Allow: /
+
+# 다음
+User-agent: Daum
+Allow: /
+
+# 구글
+User-agent: Googlebot
+Allow: /
+
+Sitemap: https://jnkcorp.co.kr/sitemap.xml
