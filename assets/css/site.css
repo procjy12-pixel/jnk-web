@@ -723,3 +723,32 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
 .proof__k { margin-top: 10px; font-size: 13.5px; line-height: 1.55; color: var(--tx-3); }
 @media (max-width: 860px) { .proof { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 620px) { .proof__k { font-size: 14px; } }
+
+/* 본문 중간 사진 — 하위 페이지가 글만 이어져 읽다 지치는 걸 끊어 줍니다.
+   생성 이미지보다 실제 납품 사진을 먼저 씁니다. 그게 훨씬 강한 증거입니다. */
+.figrow {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: clamp(12px, 1.6vw, 18px);
+  margin: clamp(30px, 4vw, 46px) 0;
+}
+.figrow figure { margin: 0; }
+.figrow img {
+  width: 100%; aspect-ratio: 4 / 5; object-fit: cover;
+  border-radius: 14px; border: 1px solid var(--line);
+  background: #0d0d10; display: block;
+}
+.figrow--wide img { aspect-ratio: 16 / 10; }
+.figrow figcaption {
+  margin-top: 10px; font-size: 13.5px; line-height: 1.55; color: var(--tx-3);
+}
+.figrow figcaption b { color: var(--tx-2); font-weight: 700; }
+.figtag {
+  display: inline-block; margin-right: 6px; padding: 2px 7px; border-radius: 5px;
+  font-size: 11px; font-weight: 800; letter-spacing: .04em;
+  color: #fff; background: var(--red);
+}
+@media (max-width: 620px) {
+  .figrow { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .figrow figcaption { font-size: 13px; }
+  .figrow--solo { grid-template-columns: 1fr; }
+}
