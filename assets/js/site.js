@@ -108,6 +108,28 @@
     }
   }
 
+  /* ── 고정 CTA 바 ──────────────────────────────────────────────
+     기본값은 CSS 에서 '보임'입니다. 여기서는 숨기기만 합니다.
+     그래야 이 스크립트가 죽어도 바는 남아 문의 경로가 사라지지 않습니다.
+
+     숨기는 경우는 두 가지뿐입니다 — 히어로나 견적폼이 화면에 있을 때.
+     같은 버튼이 화면에 이미 있는데 바까지 뜨면 가리기만 합니다.
+
+     IntersectionObserver 를 쓰는 이유는 리빌과 같습니다: 백그라운드 탭이나
+     헤드리스에서 rAF 가 멈춰도 이건 계속 돕니다. */
+  const cbar = document.getElementById('cbar');
+  if (cbar && 'IntersectionObserver' in window) {
+    const near = new Set();
+    const zones = [document.querySelector('.hero'), document.getElementById('quote')].filter(Boolean);
+    if (zones.length) {
+      const ioBar = new IntersectionObserver((es) => {
+        es.forEach((e) => (e.isIntersecting ? near.add(e.target) : near.delete(e.target)));
+        cbar.classList.toggle('is-off', near.size > 0);
+      }, { threshold: 0 });
+      zones.forEach((z) => ioBar.observe(z));
+    }
+  }
+
   let lastStep = -1;
   function setStep(i) {
     if (i < 0 || i === lastStep) return;

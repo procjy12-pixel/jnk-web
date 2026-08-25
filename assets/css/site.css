@@ -604,3 +604,122 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
   background: linear-gradient(135deg, rgba(255,20,20,.08), rgba(255,20,20,.02));
 }
 .cta__row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   모바일 — 검색 유입의 80% 가 여기로 들어옵니다 (2026.08 실측)
+   단체티 83% · 티셔츠제작 88%. 좁은 화면이 기본값이라고 보고 잡습니다.
+   데스크톱 조판은 건드리지 않도록 전부 미디어쿼리 안에 둡니다.
+   검사: python3 mobile_audit.py
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 620px) {
+  /* 본문 글자 — 13~14.5px 는 손에 들고 읽기엔 작습니다 */
+  .card__x { font-size: 15px; line-height: 1.65; }
+  .next__x { font-size: 14.5px; }
+  .sm      { font-size: 14px; line-height: 1.7; }
+  .crumb   { font-size: 13.5px; }
+  .work__x { font-size: 15px; }
+
+  /* 손가락으로 누르는 것들 — 인라인 링크는 예외지만
+     연락처와 푸터 내비는 그 자체가 버튼이라 세로 여백을 줍니다 */
+  .foot__v {
+    display: inline-block; padding: 12px 0; font-size: 18px;
+  }
+  .foot__cts { gap: 20px 36px; }
+
+  .foot__bot { gap: 18px; }
+  .foot__bot .sm a {
+    display: inline-block; padding: 9px 0; margin-right: 4px;
+  }
+
+  .crumb a { display: inline-block; padding: 5px 0; }
+
+  /* 수치 아래 설명 — 13px 대는 손에서 안 읽힙니다 */
+  .stat__x, .tl__x { font-size: 14.5px; line-height: 1.6; }
+
+  /* 브랜드 로고도 홈으로 가는 링크입니다. 위아래 여백으로 탭 영역을 만듭니다 */
+  a.brand { padding: 9px 0; }
+
+  /* 본문에 인라인으로 박힌 전화·메일 링크만 키웁니다.
+     .btn 과 .foot__v 는 이미 충분히 크고, 여기에 걸리면 오히려
+     display:inline-block 이 flex 정렬을, padding 이 버튼 크기를 깨뜨립니다. */
+  a[href^="tel:"]:not(.btn):not(.foot__v),
+  a[href^="mailto:"]:not(.btn):not(.foot__v) { display: inline-block; padding: 3px 0; }
+}
+
+/* 아주 좁은 화면 (iPhone SE 375 이하) */
+@media (max-width: 380px) {
+  .foot__cts { gap: 16px 24px; }
+  .foot__v { font-size: 17px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   고정 CTA 바 — 모바일에서 스크롤 94%가 행동 유도 없이 흘렀습니다
+   (2026.08 실측: 문서 19,906px 중 히어로~견적폼 사이가 통째로 비어 있었음)
+   유입의 80%가 모바일이라 여기가 전환의 병목입니다.
+
+   기본값을 '보임'으로 둡니다. JS 가 죽어도 바는 남아야 하니까요.
+   JS 는 숨기는 역할만 합니다 — 히어로 CTA 나 견적폼이 화면에 있을 때(중복이라).
+   ═══════════════════════════════════════════════════════════════ */
+.cbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 60;
+  display: none; gap: 10px; padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  background: rgba(8, 8, 10, .92);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+  border-top: 1px solid rgba(255, 255, 255, .1);
+  transition: transform .32s var(--ease), opacity .32s var(--ease);
+}
+.cbar a { flex: 1; justify-content: center; white-space: nowrap; }
+.cbar .btn { padding: 14px 16px; font-size: 15px; }
+.cbar__tel { flex: 0 0 auto !important; min-width: 118px; }
+
+/* JS 가 붙이는 숨김 상태 — 화면 밖으로 밀어냅니다 */
+.cbar.is-off { transform: translateY(110%); opacity: 0; pointer-events: none; }
+
+@media (max-width: 720px) {
+  .cbar { display: flex; }
+  /* 바에 가려 마지막 내용이 안 읽히지 않게 */
+  .foot { padding-bottom: calc(40px + 64px + env(safe-area-inset-bottom)); }
+}
+
+/* 섹션 사이 인라인 CTA — 큰 블록을 여러 개 넣으면 지저분해지므로 한 줄로 */
+.midcta {
+  margin-top: clamp(34px, 4.5vw, 56px);
+  padding: clamp(18px, 2.4vw, 26px) clamp(20px, 2.8vw, 30px);
+  border: 1px solid rgba(255, 20, 20, .2); border-radius: 16px;
+  background: linear-gradient(120deg, rgba(255, 20, 20, .07), rgba(255, 20, 20, .015));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 14px 20px;
+  justify-content: space-between;
+}
+.midcta__t { font-size: clamp(15px, 1.35vw, 19px); font-weight: 700; letter-spacing: -.02em; color: #fff; }
+.midcta__x { margin-top: 5px; font-size: 14px; line-height: 1.6; color: var(--tx-3); }
+/* 빨간 버튼은 box-shadow 로 글로우가 퍼집니다. 간격이 좁으면 옆 버튼 글자를 덮어요.
+   쌓임 순서도 명시해 둡니다 — 글로우가 위로 올라오지 않게. */
+.midcta__b { display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch; }
+.midcta__b .btn { position: relative; z-index: 1; }
+.midcta__b .btn--red { z-index: 0; }
+
+@media (max-width: 620px) {
+  .midcta { flex-direction: column; align-items: stretch; }
+  .midcta__b { gap: 16px; }
+  .midcta__b .btn { flex: 1 1 0; justify-content: center; min-width: 0; }
+}
+/* 아주 좁으면 세로로 쌓아 글로우가 겹칠 일 자체를 없앱니다.
+   세로 방향에서 flex:1 은 '높이'를 나눠 갖는 뜻이 되어 버튼이 납작해집니다.
+   그래서 여기서는 반드시 풀어 줍니다. */
+@media (max-width: 400px) {
+  .midcta__b { flex-direction: column; gap: 12px; }
+  .midcta__b .btn { flex: 0 0 auto; width: 100%; }
+}
+
+/* 신뢰 블록 — 후기가 없는 대신 실제 거래 사실로 미는 자리 */
+.proof { display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(14px, 1.8vw, 22px); }
+.proof__i {
+  padding: clamp(20px, 2.4vw, 28px); border-radius: 16px;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, .022);
+}
+.proof__v { font-size: clamp(26px, 3.4vw, 42px); font-weight: 800; letter-spacing: -.045em; color: #fff; line-height: 1; }
+.proof__v small { font-size: .46em; font-weight: 700; margin-left: 3px; color: var(--tx-2); }
+.proof__k { margin-top: 10px; font-size: 13.5px; line-height: 1.55; color: var(--tx-3); }
+@media (max-width: 860px) { .proof { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .proof__k { font-size: 14px; } }
