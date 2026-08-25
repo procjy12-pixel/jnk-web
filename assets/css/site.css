@@ -752,3 +752,9 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
   .figrow figcaption { font-size: 13px; }
   .figrow--solo { grid-template-columns: 1fr; }
 }
+
+/* 가운뎃점 목록의 항목이 한가운데서 끊기지 않게.
+   `패턴·원단 수배·공장 배치` 처럼 · 에 공백이 없으면 브라우저가
+   "수배·공장" 으로 잘못 묶어 "공장 배치"가 반으로 갈립니다.
+   본문 텍스트는 그대로 두고 마크업으로만 제어합니다 (색인 영향 없음). */
+.nb { white-space: nowrap; }
