@@ -1,17 +1,50 @@
-# jnkcorp.co.kr
+# jnkcorp.co.kr — (주)제이앤케이컴퍼니리미티드
+# 정적 사이트입니다. 로그인·관리자·개인정보 경로가 없어 막을 것이 없습니다.
+
 User-agent: *
 Allow: /
 
-# 네이버
+# ── 국내 검색 ──────────────────────────────────────────────
 User-agent: Yeti
 Allow: /
 
-# 다음
 User-agent: Daum
 Allow: /
 
-# 구글
+# ── 구글 ───────────────────────────────────────────────────
 User-agent: Googlebot
+Allow: /
+
+User-agent: Googlebot-Image
+Allow: /
+
+# ── AI 크롤러 ──────────────────────────────────────────────
+# 막지 않습니다. 요즘은 "의류 소량생산 어디서 하나요" 를 챗봇에 묻고
+# 거기서 추천받아 들어오는 경로가 실제로 생깁니다.
+# 크롤링을 허용해야 인용 대상이 됩니다.
+
+User-agent: GPTBot
+Allow: /
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-Web
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot-Extended
 Allow: /
 
 Sitemap: https://jnkcorp.co.kr/sitemap.xml
