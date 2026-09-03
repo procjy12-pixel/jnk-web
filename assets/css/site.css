@@ -779,8 +779,7 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
   .card__i { width: 38px; height: 38px; margin-bottom: 12px; }
 }
 
-/* 진행 단계(process)의 아이콘 */
-.tl__i {
-  width: 34px; height: 34px; margin-bottom: 12px;
-  display: block; object-fit: contain; opacity: .6;
-}
+/* ⚠️ 여기에 .tl__i 를 쓰지 마세요. 그건 이미 타임라인 '항목 컨테이너' 입니다(위쪽 참조).
+   아이콘용으로 같은 이름을 쓰면 6칸 그리드가 아이콘 크기로 쪼그라들어
+   글자가 한 자씩 세로로 섭니다. 실제로 한 번 그렇게 깨뜨렸습니다.
+   단계 아이콘이 필요하면 .tl__ico 로 새로 만드세요. */
