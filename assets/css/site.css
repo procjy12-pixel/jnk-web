@@ -758,3 +758,29 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
    "수배·공장" 으로 잘못 묶어 "공장 배치"가 반으로 갈립니다.
    본문 텍스트는 그대로 두고 마크업으로만 제어합니다 (색인 영향 없음). */
 .nb { white-space: nowrap; }
+
+/* ══════════════════════════════════════════════════════════════
+   카드 아이콘 — 픽토그램 세트 (assets/img/icon/)
+   흰 선화 PNG 라 다크 배경에 그대로 얹힙니다.
+   currentColor 로 물들일 수 없어서, 호버 강조는 밝기로 처리합니다.
+   ══════════════════════════════════════════════════════════════ */
+.card__i {
+  width: 44px; height: 44px; margin-bottom: 16px;
+  display: block; object-fit: contain;
+  opacity: .72;
+  transition: opacity .35s var(--ease), transform .35s var(--ease);
+}
+.card:hover .card__i { opacity: 1; transform: translateY(-2px); }
+
+/* 번호는 아이콘 옆에 작게 — 아이콘이 주인공이 됩니다 */
+.card__i + .card__n { margin-top: 0; }
+
+@media (max-width: 620px) {
+  .card__i { width: 38px; height: 38px; margin-bottom: 12px; }
+}
+
+/* 진행 단계(process)의 아이콘 */
+.tl__i {
+  width: 34px; height: 34px; margin-bottom: 12px;
+  display: block; object-fit: contain; opacity: .6;
+}
