@@ -1,22 +1,31 @@
 # jnkcorp.co.kr — (주)제이앤케이컴퍼니리미티드
-# 정적 사이트입니다. 로그인·관리자·개인정보 경로가 없어 막을 것이 없습니다.
+#
+# ⚠️ robots.txt 규칙 — 크롤러는 자기 이름이 적힌 그룹 하나만 읽습니다.
+#    User-agent: * 에만 Disallow 를 적으면, 아래 Googlebot·Yeti 는
+#    자기 그룹에 Disallow 가 없으므로 그냥 다 긁어갑니다.
+#    그래서 막을 경로는 **모든 그룹에 똑같이** 적어야 합니다.
 
 User-agent: *
 Allow: /
+Disallow: /admin/
 
 # ── 국내 검색 ──────────────────────────────────────────────
 User-agent: Yeti
 Allow: /
+Disallow: /admin/
 
 User-agent: Daum
 Allow: /
+Disallow: /admin/
 
 # ── 구글 ───────────────────────────────────────────────────
 User-agent: Googlebot
 Allow: /
+Disallow: /admin/
 
 User-agent: Googlebot-Image
 Allow: /
+Disallow: /admin/
 
 # ── AI 크롤러 ──────────────────────────────────────────────
 # 막지 않습니다. 요즘은 "의류 소량생산 어디서 하나요" 를 챗봇에 묻고
@@ -25,26 +34,34 @@ Allow: /
 
 User-agent: GPTBot
 Allow: /
+Disallow: /admin/
 
 User-agent: OAI-SearchBot
 Allow: /
+Disallow: /admin/
 
 User-agent: ChatGPT-User
 Allow: /
+Disallow: /admin/
 
 User-agent: ClaudeBot
 Allow: /
+Disallow: /admin/
 
 User-agent: Claude-Web
 Allow: /
+Disallow: /admin/
 
 User-agent: PerplexityBot
 Allow: /
+Disallow: /admin/
 
 User-agent: Google-Extended
 Allow: /
+Disallow: /admin/
 
 User-agent: Applebot-Extended
 Allow: /
+Disallow: /admin/
 
 Sitemap: https://jnkcorp.co.kr/sitemap.xml
