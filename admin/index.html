@@ -140,10 +140,15 @@
       <div class="lnk__x">무엇을 언제 바꿨는지. 되돌릴 때도 여기서 봅니다.</div>
       <span class="lnk__s s-on">GitHub</span>
     </a>
+    <a href="https://docs.google.com/spreadsheets/" target="_blank" rel="noopener">
+      <div class="lnk__t">문의 기록 (스프레드시트)</div>
+      <div class="lnk__x">문의가 시트에 한 줄씩 쌓입니다. 메일을 놓쳐도 여기 남습니다.<br>메일 전송이 실패하면 이쪽이 대신 알림을 보냅니다.</div>
+      <span class="lnk__s s-off" id="sSheet">미설정</span>
+    </a>
     <a href="https://formsubmit.co/" target="_blank" rel="noopener">
-      <div class="lnk__t">견적 문의 수신</div>
-      <div class="lnk__x">문의는 <b>info@frameofframe.com</b> 으로 들어옵니다.<br>최초 1회 활성화 메일을 눌러야 실제로 옵니다.</div>
-      <span class="lnk__s s-off" id="sForm">활성화 확인 필요</span>
+      <div class="lnk__t">견적 문의 수신 (메일)</div>
+      <div class="lnk__x">문의는 <b>info@frameofframe.com</b> 으로 들어옵니다.<br>활성화 확인됨 — 실제로 메일이 들어오는 상태입니다.</div>
+      <span class="lnk__s s-on" id="sForm">활성화 완료</span>
     </a>
   </div>
 
@@ -184,8 +189,10 @@
       <small>서치어드바이저·서치콘솔 양쪽. 페이지를 추가할 때마다 다시 해야 합니다.</small></li>
     <li><b>네이버 스마트플레이스 등록</b>
       <small>동대문구 전농로 47. 브랜드명 검색은 홈페이지 SEO 로 못 이깁니다. 플레이스가 답입니다.</small></li>
-    <li><b>견적 문의 폼 활성화</b>
-      <small>info@frameofframe.com 으로 온 "Activate Form" 메일의 링크를 한 번 누르면 됩니다.</small></li>
+    <li><b>문의 기록 시트 붙이기</b>
+      <small>지금 문의는 메일에만 남습니다. 놓치면 사라지고, 사라진 줄도 모릅니다.
+      apps-script/문의기록.gs 를 구글 스프레드시트에 배포하고 주소만 주시면 연결합니다.
+      무료고 서버도 필요 없습니다.</small></li>
     <li><b>고온 접착 공정의 정확한 명칭 확인</b>
       <small>심실링 / 본딩 / 웰딩 중 무엇인지. 확인되면 전용 페이지를 만듭니다.</small></li>
     <li><b>실제 공장·납품 사진</b>
@@ -270,13 +277,19 @@
   /* 집계 도구 판정 — 번호는 count.js 안에 있으므로 그 파일을 직접 읽습니다.
      페이지 HTML 만 보고 '설치됨' 이라고 하면 번호가 비어 있어도 설치됐다고
      나옵니다. 그건 거짓말이라 실제 값을 봅니다. */
-  fetch('/assets/js/count.js', { cache: 'no-store' }).then(function (r) { return r.text(); })
-    .then(function (js) {
+  Promise.all([
+    fetch('/assets/js/count.js', { cache: 'no-store' }).then(function (r) { return r.text(); }),
+    fetch('/assets/js/site.js',  { cache: 'no-store' }).then(function (r) { return r.text(); })
+  ]).then(function (both) {
+      var js = both[0] + '\n' + both[1];
       var na = (js.match(/const NAVER\s*=\s*'([^']*)'/) || [])[1] || '';
       var ga = (js.match(/const GA4\s*=\s*'([^']*)'/) || [])[1] || '';
 
       if (na) { $('sNa').textContent = na; $('sNa').className = 'lnk__s s-on'; }
       if (ga) { $('sGa').textContent = ga; $('sGa').className = 'lnk__s s-on'; }
+
+      var sheet = (js.match(/const SHEET\s*=\s*'([^']*)'/) || [])[1];
+      if (sheet) { $('sSheet').textContent = '연결됨'; $('sSheet').className = 'lnk__s s-on'; }
 
       if (na || ga) {
         $('kpiVisits').innerHTML = '켜짐';

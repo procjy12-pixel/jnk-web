@@ -33,6 +33,17 @@
   const RECEIVER = 'info@frameofframe.com';
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
 
+  /* ── 문의 기록 (구글 스프레드시트) ──────────────────────────
+     메일은 놓치면 끝입니다. 스팸함에 들어가거나 담당자가 못 보면
+     그 문의는 사라지고, 사라진 줄도 모릅니다. 그래서 따로 남깁니다.
+
+     SHEET 를 비워 두면 기록을 남기지 않고 지금까지처럼 메일만 갑니다.
+     주소는 apps-script/문의기록.gs 를 배포하면 받습니다.
+     TOKEN 은 이 파일 안에 그대로 들어가므로 진짜 비밀이 아닙니다 —
+     스캐너를 거르는 용도이고, .gs 쪽 값과 같아야 합니다. */
+  const SHEET = '';
+  const SHEET_TOKEN = 'jnk-quote-2026';
+
   const html   = document.documentElement;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const $  = (s, r = document) => r.querySelector(s);
@@ -301,9 +312,10 @@
   const smooth = () => (reduce ? 'auto' : 'smooth');
 
   /* 서버로 보냅니다. 실패하면 메일 앱 열기로 되돌아가므로 문의가 사라지지 않습니다. */
-  async function send(body) {
-    if (!ENDPOINT) return false;
-    const payload = {
+  /* 메일과 시트가 같은 내용을 써야 하므로 한 곳에서 만듭니다.
+     따로 만들면 한쪽만 고쳐 놓고 왜 값이 다른지 찾게 됩니다. */
+  function buildPayload(body) {
+    return {
       _subject: `[견적문의] ${val('#fBrand') || val('#fName')} — ${checked('qty')[0]}`,
       _template: 'table',
       _captcha: 'false',
@@ -315,9 +327,13 @@
       '연락처': val('#fTel'),
       '이메일': val('#fMail') || '-',
       '내용': val('#fMemo') || '-',
-      '요약': body
+      '요약': body,
+      ...(val('#fMail') ? { _replyto: val('#fMail') } : {})
     };
-    if (val('#fMail')) payload._replyto = val('#fMail');
+  }
+
+  async function send(payload) {
+    if (!ENDPOINT) return false;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 12000);
     try {
@@ -334,6 +350,36 @@
       return !!j && String(j.success) === 'true';
     } catch {
       return false;                     // 오프라인·차단·타임아웃
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /* 시트에 한 줄 남깁니다. 실패해도 접수 결과를 바꾸지 않습니다 —
+     기록이 안 됐다고 손님에게 "실패했다" 고 할 일은 아니니까요.
+
+     Content-Type 을 지정하지 않는 게 중요합니다. 문자열 본문은 기본값이
+     text/plain 이라 프리플라이트(OPTIONS)가 안 붙습니다. application/json 을
+     쓰면 프리플라이트가 뜨고 앱스스크립트가 그걸 처리하지 못해 통째로 막힙니다. */
+  async function logSheet(payload, mailed) {
+    if (!SHEET) return false;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const res = await fetch(SHEET, {
+        method: 'POST',
+        body: JSON.stringify(Object.assign({}, payload, {
+          token: SHEET_TOKEN,
+          mailed: !!mailed,
+          ref: document.referrer || '(직접)',
+          page: location.pathname
+        })),
+        signal: ctl.signal
+      });
+      const j = await res.json().catch(() => null);
+      return !!j && j.ok === true;
+    } catch {
+      return false;
     } finally {
       clearTimeout(timer);
     }
@@ -371,19 +417,29 @@
     btn.disabled = true;
     btn.textContent = '보내는 중…';
 
-    const ok = await send(body);
+    const payload = buildPayload(body);
+    const ok = await send(payload);
+
+    // 기록은 메일 결과와 함께 남깁니다. 메일이 실패했으면 시트 쪽이
+    // 대신 알림을 보내므로, 둘 다 실패했을 때만 손님에게 되돌아갑니다.
+    const logged = await logSheet(payload, ok);
 
     btn.disabled = false;
     btn.textContent = label;
 
-    // 접수 성공/실패에 따라 안내 문구와 버튼 구성을 바꿉니다
-    $('#doneTitle').textContent = ok ? '문의가 접수됐습니다' : '견적 요청서가 준비됐습니다';
-    $('#doneLede').textContent  = ok
+    /* 접수됐다고 말할 수 있는 조건 — 둘 중 하나만 성공해도 됩니다.
+       메일이 실패해도 시트에 들어갔으면 앱스스크립트가 대신 알림을 보냅니다.
+       그러니 그 경우도 '전달됨' 이 맞습니다.
+       둘 다 실패했을 때만 손님에게 직접 메일을 부탁합니다. */
+    const 접수 = ok || logged;
+
+    $('#doneTitle').textContent = 접수 ? '문의가 접수됐습니다' : '견적 요청서가 준비됐습니다';
+    $('#doneLede').textContent  = 접수
       ? '담당자가 확인하는 대로 회신드립니다. 아래는 보내신 내용입니다.'
       : '지금 전송이 되지 않았습니다. 아래 내용을 메일로 보내시거나 복사해 전달해 주세요.';
-    $('#doneBadge').textContent = ok ? 'SENT' : 'READY';
-    $('#doneMail').classList.toggle('btn--red', !ok);
-    $('#doneMail').textContent = ok ? '메일로도 보내기' : '메일로 보내기';
+    $('#doneBadge').textContent = 접수 ? 'SENT' : 'READY';
+    $('#doneMail').classList.toggle('btn--red', !접수);
+    $('#doneMail').textContent = 접수 ? '메일로도 보내기' : '메일로 보내기';
 
     form.style.display = 'none';
     done.classList.add('is-on');
@@ -391,7 +447,7 @@
 
     // 실제로 접수된 건만 목표 달성으로 셉니다. count.js 가 받습니다.
     // 전송이 실패해 메일 안내로 넘어간 경우는 세지 않습니다 — 문의가 온 게 아니니까요.
-    if (ok) document.dispatchEvent(new CustomEvent('jnk:quote'));
+    if (접수) document.dispatchEvent(new CustomEvent('jnk:quote'));
   });
 
   $('#doneCopy')?.addEventListener('click', async (e) => {
