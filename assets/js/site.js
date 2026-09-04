@@ -388,6 +388,10 @@
     form.style.display = 'none';
     done.classList.add('is-on');
     done.scrollIntoView({ block: 'start', behavior: smooth() });
+
+    // 실제로 접수된 건만 목표 달성으로 셉니다. count.js 가 받습니다.
+    // 전송이 실패해 메일 안내로 넘어간 경우는 세지 않습니다 — 문의가 온 게 아니니까요.
+    if (ok) document.dispatchEvent(new CustomEvent('jnk:quote'));
   });
 
   $('#doneCopy')?.addEventListener('click', async (e) => {

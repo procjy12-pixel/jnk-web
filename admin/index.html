@@ -48,6 +48,8 @@
   .todo li b { color: #fff; }
   .todo li small { display: block; margin-top: 4px; font-size: 13px; color: var(--tx-3); }
 </style>
+<!-- 방문 계측 · 설정은 /assets/js/count.js 한 곳에만 있습니다 -->
+<script src="/assets/js/count.js?v=2019622a" defer></script>
 </head>
 <body>
 
@@ -93,15 +95,21 @@
       <div class="kpi__v" id="kpiBuild">—</div>
       <div class="kpi__k">마지막 배포 시각</div>
     </div>
+    <div class="kpi__i">
+      <div class="kpi__v" id="kpiWired">—</div>
+      <div class="kpi__k">계측 코드가 심긴 페이지<br>모든 페이지에 있어야 정상입니다</div>
+    </div>
   </div>
 
   <div class="adm__warn" style="margin-top:22px;border-color:var(--line);background:rgba(255,255,255,.022)">
     <span aria-hidden="true">✱</span>
     <div>
-      <b>왜 방문 수가 비어 있나</b> — GitHub Pages 는 접속 기록을 남기지 않습니다.
-      페이지가 스스로 셀 수는 없고, 방문을 받아 적을 곳이 따로 있어야 합니다.
-      아래 <b>네이버 애널리틱스</b>나 <b>GA4</b> 중 하나를 등록하고 번호를 넣으면
-      그때부터 쌓입니다. <b>지난 방문은 소급해서 알 수 없습니다.</b>
+      <b id="whyTitle">왜 방문 수가 아직 비어 있나</b>
+      <span id="whyBody"> — 계측 코드는 전 페이지에 심어 뒀습니다.
+      다만 방문을 <b>받아 적을 곳</b>의 번호가 아직 비어 있어서, 코드가 아무것도 보내지 않습니다.
+      아래 <b>네이버 애널리틱스</b>에서 사이트를 등록하고 <b>등록번호</b>만 알려주시면
+      한 줄 고쳐서 바로 켜집니다.
+      <br><br><b>지난 방문은 소급해서 알 수 없습니다.</b> 오늘 켜면 오늘부터 쌓입니다.</span>
     </div>
   </div>
 
@@ -147,10 +155,31 @@
     <div class="kpi__i"><div class="kpi__v" id="hHttps">—</div><div class="kpi__k">HTTPS</div></div>
   </div>
 
+  <h2>내 방문 빼기</h2>
+  <div class="adm__warn" style="border-color:var(--line);background:rgba(255,255,255,.022)">
+    <span aria-hidden="true">✱</span>
+    <div>
+      사장님이 하루에도 몇 번씩 사이트를 열어 보시면 그게 전부 방문으로 잡힙니다.
+      방문이 하루 10건일 때 그중 6건이 우리면 숫자를 볼 이유가 없어집니다.
+      <br><br>
+      아래를 켜 두면 <b>이 브라우저에서만</b> 계측을 보내지 않습니다.
+      다른 사람 방문은 그대로 잡힙니다.
+      <br><br>
+      <button class="btn" id="optBtn" type="button">확인 중…</button>
+      <span class="sm" id="optNow" style="margin-left:12px;color:var(--tx-3)"></span>
+      <br><br>
+      <span class="sm" style="color:var(--tx-3)">브라우저 저장소에 기록합니다.
+      시크릿 창을 쓰거나 방문 기록을 지우면 풀립니다. 휴대폰에서도 따로 켜셔야 합니다.</span>
+    </div>
+  </div>
+
   <h2>사람이 해야 하는 것</h2>
   <ul class="todo">
-    <li><b>집계 도구 등록</b>
-      <small>네이버 애널리틱스 또는 GA4. 이게 없으면 한 달 뒤에도 "효과가 있었나"를 못 봅니다.</small></li>
+    <li><b>네이버 애널리틱스 등록번호 받기</b> — 지금 제일 급합니다
+      <small>계측 코드는 전 페이지에 심어 뒀습니다. 번호만 있으면 켜집니다.
+      analytics.naver.com 에 네이버 아이디로 로그인 → 사이트 등록 → jnkcorp.co.kr →
+      받은 <b>등록번호</b>를 알려주시면 됩니다. 5분이면 끝납니다.
+      <br>미루는 하루만큼 그날 방문은 영영 못 봅니다.</small></li>
     <li><b>사이트맵 재제출</b>
       <small>서치어드바이저·서치콘솔 양쪽. 페이지를 추가할 때마다 다시 해야 합니다.</small></li>
     <li><b>네이버 스마트플레이스 등록</b>
@@ -179,6 +208,10 @@
    숫자를 지어내지 않고 '재서 나온 값'만 씁니다. */
 (function () {
   var $ = function (id) { return document.getElementById(id); };
+  var ready = function (fn) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn);
+    else fn();
+  };
 
   function probe(path, el, label) {
     fetch(path, { cache: 'no-store' })
@@ -197,18 +230,29 @@
       if (n) $('kpiPages').innerHTML = n + '<small>페이지</small>';
     }).catch(function () {});
 
-  /* 사이트 전체 이미지 수 — sitemap 의 페이지를 훑어 셉니다 (몇 초 걸립니다) */
+  /* 사이트 전체를 한 번 훑으면서 이미지 수와 계측 삽입 여부를 같이 셉니다.
+     따로 두 번 돌면 느리기만 하고 얻는 게 같습니다. (몇 초 걸립니다) */
   fetch('/sitemap.xml', { cache: 'no-store' }).then(function (r) { return r.text(); })
     .then(function (x) {
       var urls = (x.match(/<loc>([^<]*)<\/loc>/g) || [])
         .map(function (s) { return s.replace(/<\/?loc>/g, ''); });
-      var total = 0, done = 0;
+      var total = 0, wired = 0, done = 0, miss = [];
       urls.forEach(function (u) {
         fetch(u, { cache: 'no-store' }).then(function (r) { return r.text(); })
-          .then(function (h) { total += (h.match(/<img\b/g) || []).length; })
+          .then(function (h) {
+            total += (h.match(/<img\b/g) || []).length;
+            if (h.indexOf('/assets/js/count.js') > -1) wired++;
+            else miss.push(u.replace(location.origin, '') || '/');
+          })
           .catch(function () {})
           .then(function () {
-            if (++done === urls.length) $('kpiImages').innerHTML = total + '<small>장</small>';
+            if (++done !== urls.length) return;
+            $('kpiImages').innerHTML = total + '<small>장</small>';
+            $('kpiWired').innerHTML = wired + '<small>/ ' + urls.length + '</small>';
+            if (wired < urls.length) {
+              $('kpiWired').parentNode.classList.add('kpi__i--off');
+              $('kpiWired').title = '빠진 페이지: ' + miss.join(', ');
+            }
           });
       });
     }).catch(function () {});
@@ -223,19 +267,50 @@
       String(d.getMinutes()).padStart(2, '0') + '</small>';
   }).catch(function () { $('kpiBuild').textContent = '알 수 없음'; });
 
-  /* 집계 도구가 실제로 심겼는지 홈에서 확인 */
-  fetch('/', { cache: 'no-store' }).then(function (r) { return r.text(); })
-    .then(function (h) {
-      if (h.indexOf('wcslog') > -1 || h.indexOf('analytics.naver') > -1) {
-        $('sNa').textContent = '설치됨'; $('sNa').className = 'lnk__s s-on';
-      }
-      var g = h.match(/G-[A-Z0-9]{6,}/);
-      if (g) { $('sGa').textContent = g[0]; $('sGa').className = 'lnk__s s-on'; }
-      if (h.indexOf('wcslog') > -1 || g) {
-        $('kpiVisits').textContent = '연결됨';
-        document.querySelector('.kpi__i--off').classList.remove('kpi__i--off');
+  /* 집계 도구 판정 — 번호는 count.js 안에 있으므로 그 파일을 직접 읽습니다.
+     페이지 HTML 만 보고 '설치됨' 이라고 하면 번호가 비어 있어도 설치됐다고
+     나옵니다. 그건 거짓말이라 실제 값을 봅니다. */
+  fetch('/assets/js/count.js', { cache: 'no-store' }).then(function (r) { return r.text(); })
+    .then(function (js) {
+      var na = (js.match(/const NAVER\s*=\s*'([^']*)'/) || [])[1] || '';
+      var ga = (js.match(/const GA4\s*=\s*'([^']*)'/) || [])[1] || '';
+
+      if (na) { $('sNa').textContent = na; $('sNa').className = 'lnk__s s-on'; }
+      if (ga) { $('sGa').textContent = ga; $('sGa').className = 'lnk__s s-on'; }
+
+      if (na || ga) {
+        $('kpiVisits').innerHTML = '켜짐';
+        var off = document.querySelector('.kpi__i--off');
+        if (off) off.classList.remove('kpi__i--off');
+        $('whyTitle').textContent = '방문 수는 어디서 보나';
+        $('whyBody').innerHTML = ' — 집계가 켜져 있습니다. 실제 숫자는 ' +
+          (na ? '<b>네이버 애널리틱스</b>' : '<b>GA4</b>') +
+          ' 화면에서 봅니다. 이 페이지는 서버가 없어서 그 숫자를 직접 가져올 수 없습니다.' +
+          '<br><br>데이터가 보이기까지 <b>반나절쯤</b> 걸립니다. 방금 켜셨다면 내일 보세요.';
       }
     }).catch(function () {});
+
+  /* 내 방문 빼기 — count.js 가 올려 둔 스위치를 그대로 씁니다.
+     ⚠️ count.js 는 defer 라서 이 인라인 스크립트보다 늦게 돕니다.
+        여기서 바로 window.JNK_COUNT 를 찾으면 항상 없습니다.
+        DOMContentLoaded 는 defer 스크립트가 다 끝난 뒤에 옵니다. */
+  ready(function () {
+    var btn = $('optBtn'), now = $('optNow');
+    var api = (window.JNK_COUNT && window.JNK_COUNT.optOut) || null;
+    if (!api) { btn.textContent = '사용할 수 없음'; btn.disabled = true;
+                now.textContent = 'count.js 를 못 읽었습니다'; return; }
+    function paint() {
+      var on = api.is();
+      btn.textContent = on ? '내 방문 다시 세기' : '이 브라우저 방문 빼기';
+      now.textContent = on ? '지금: 빼는 중' : '지금: 세는 중';
+    }
+    btn.addEventListener('click', function () {
+      api.is() ? api.off() : api.on();
+      paint();
+    });
+    paint();
+  });
+
 })();
 </script>
 </body>
