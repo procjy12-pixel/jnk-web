@@ -30,7 +30,8 @@
      받는 주소를 바꾸려면 RECEIVER 만 고치면 됩니다.
      끄고 싶으면 ENDPOINT 를 빈 문자열로 두세요 — 메일 앱 열기로 되돌아갑니다.
      ══════════════════════════════════════════════════════════ */
-  const RECEIVER = 'info@frameofframe.com';
+  // ⚠️ 주소를 바꾸면 FormSubmit 활성화 메일이 새 주소로 다시 옵니다. 눌러야 들어옵니다.
+  const RECEIVER = 'jnk@jnkcorp.co.kr';
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
 
   /* ── 문의 기록 (구글 스프레드시트) ──────────────────────────
