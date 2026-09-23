@@ -31,7 +31,11 @@
      끄고 싶으면 ENDPOINT 를 빈 문자열로 두세요 — 메일 앱 열기로 되돌아갑니다.
      ══════════════════════════════════════════════════════════ */
   // ⚠️ 주소를 바꾸면 FormSubmit 활성화 메일이 새 주소로 다시 옵니다. 눌러야 들어옵니다.
-  const RECEIVER = 'jnk@jnkcorp.co.kr';
+  const RECEIVER = 'jnk@jnkcorp.co.kr';          // 사이트에 보이는 주소 · 실패 시 메일 버튼도 이 주소
+  const BACKUP   = 'info@frameofframe.com';      // 예비 수신함
+  // 한 통을 두 주소로 각각 보냅니다. 한쪽이 막히거나 스팸으로 빠져도 다른 쪽으로 옵니다.
+  // 2026-09-23: jnk@ 로만 보내던 동안 문의가 뜸해 확인했더니, 전송은 정상이고 도착이 느렸을 뿐이었습니다.
+  // 그래도 한 곳에만 걸어 두면 그 한 곳이 막히는 날 문의가 통째로 사라집니다.
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
 
   /* ── 문의 기록 (구글 스프레드시트) ──────────────────────────
@@ -333,12 +337,11 @@
     };
   }
 
-  async function send(payload) {
-    if (!ENDPOINT) return false;
+  async function sendTo(to, payload) {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 12000);
     try {
-      const res = await fetch(ENDPOINT, {
+      const res = await fetch('https://formsubmit.co/ajax/' + to, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(payload),
@@ -354,6 +357,14 @@
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /* 두 주소로 동시에 보내고, 하나라도 성공하면 접수로 봅니다.
+     순서대로 보내면 앞의 것이 12초 버티는 동안 손님이 기다립니다. */
+  async function send(payload) {
+    if (!ENDPOINT) return false;
+    const 결과 = await Promise.all([RECEIVER, BACKUP].map((to) => sendTo(to, payload)));
+    return 결과.some(Boolean);
   }
 
   /* 시트에 한 줄 남깁니다. 실패해도 접수 결과를 바꾸지 않습니다 —
