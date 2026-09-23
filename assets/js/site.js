@@ -38,16 +38,16 @@
   // 그래도 한 곳에만 걸어 두면 그 한 곳이 막히는 날 문의가 통째로 사라집니다.
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
 
-  /* ── 문의 기록 (구글 스프레드시트) ──────────────────────────
+  /* ── 문의 원장 (클라우드플레어 워커 + KV) ──────────────────
      메일은 놓치면 끝입니다. 스팸함에 들어가거나 담당자가 못 보면
-     그 문의는 사라지고, 사라진 줄도 모릅니다. 그래서 따로 남깁니다.
+     그 문의는 사라지고, 사라진 줄도 모릅니다.
 
-     SHEET 를 비워 두면 기록을 남기지 않고 지금까지처럼 메일만 갑니다.
-     주소는 apps-script/문의기록.gs 를 배포하면 받습니다.
-     TOKEN 은 이 파일 안에 그대로 들어가므로 진짜 비밀이 아닙니다 —
-     스캐너를 거르는 용도이고, .gs 쪽 값과 같아야 합니다. */
-  const SHEET = '';
-  const SHEET_TOKEN = 'jnk-quote-2026';
+     2026-09-23: "문의가 안 온다"를 확인하는 데 한 시간이 걸렸습니다.
+     남는 기록이 없으면 문의가 없었던 건지 사라진 건지 가릴 수가 없습니다.
+     그래서 메일과 별개로 한 건씩 원장에 남깁니다. 어드민에서 봅니다.
+     토큰은 이 파일에 그대로 들어가므로 진짜 비밀이 아닙니다 — 스캐너를 거르는 용도입니다. */
+  const LEDGER = 'https://jnk-inquiry.chlwodud2770.workers.dev/submit';
+  const LEDGER_TOKEN = 'jnk-quote-2026';
 
   const html   = document.documentElement;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -367,21 +367,18 @@
     return 결과.some(Boolean);
   }
 
-  /* 시트에 한 줄 남깁니다. 실패해도 접수 결과를 바꾸지 않습니다 —
-     기록이 안 됐다고 손님에게 "실패했다" 고 할 일은 아니니까요.
-
-     Content-Type 을 지정하지 않는 게 중요합니다. 문자열 본문은 기본값이
-     text/plain 이라 프리플라이트(OPTIONS)가 안 붙습니다. application/json 을
-     쓰면 프리플라이트가 뜨고 앱스스크립트가 그걸 처리하지 못해 통째로 막힙니다. */
-  async function logSheet(payload, mailed) {
-    if (!SHEET) return false;
+  /* 원장에 한 건 남깁니다. 실패해도 접수 결과를 바꾸지 않습니다 —
+     기록이 안 됐다고 손님에게 "실패했다" 고 할 일은 아니니까요. */
+  async function logLedger(payload, mailed) {
+    if (!LEDGER) return false;
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 8000);
     try {
-      const res = await fetch(SHEET, {
+      const res = await fetch(LEDGER, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({}, payload, {
-          token: SHEET_TOKEN,
+          token: LEDGER_TOKEN,
           mailed: !!mailed,
           ref: document.referrer || '(직접)',
           page: location.pathname
@@ -432,9 +429,9 @@
     const payload = buildPayload(body);
     const ok = await send(payload);
 
-    // 기록은 메일 결과와 함께 남깁니다. 메일이 실패했으면 시트 쪽이
-    // 대신 알림을 보내므로, 둘 다 실패했을 때만 손님에게 되돌아갑니다.
-    const logged = await logSheet(payload, ok);
+    // 기록은 메일 결과와 함께 남깁니다. 메일이 실패해도 원장에 남았으면
+    // 문의는 우리 손에 있습니다. 둘 다 실패했을 때만 손님에게 되돌아갑니다.
+    const logged = await logLedger(payload, ok);
 
     btn.disabled = false;
     btn.textContent = label;
