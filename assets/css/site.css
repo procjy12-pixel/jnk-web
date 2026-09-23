@@ -446,7 +446,7 @@ body::after {
 .pick input:focus-visible + label { outline: 2px solid var(--red); outline-offset: 2px; }
 
 /* 수량 — 카드형 라디오 */
-.qty { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
+.qty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
 .qty input { position: absolute; opacity: 0; width: 0; height: 0; }
 .qty label {
   display: block; padding: 20px; border-radius: 14px; cursor: pointer;
@@ -465,7 +465,9 @@ body::after {
   display: inline-block; margin-bottom: 8px; padding: 3px 9px; border-radius: 999px;
   background: var(--red); color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
 }
-@media (max-width: 900px) { .qty { grid-template-columns: repeat(2, 1fr); } }
+/* 칸이 셋이라 좁은 화면에서 2열로 두면 한 칸이 빕니다. 한 줄에 하나씩 쌓습니다. */
+@media (max-width: 900px) { .qty { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .qty label { padding: 16px 20px; } }
 
 .in {
   width: 100%; margin-top: 13px; padding: 15px 17px;
