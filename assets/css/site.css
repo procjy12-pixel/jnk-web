@@ -373,6 +373,8 @@ body::after {
 .card:hover { border-color: var(--line-2); transform: translateY(-3px); }
 .card:hover::before { opacity: 1; }
 .card__n { font-size: 12px; font-weight: 800; letter-spacing: .16em; color: var(--red); }
+/* 사진이 얹힌 카드 (블로그 목록) — 비율을 고정해 카드 높이가 들쭉날쭉하지 않게 */
+.card__ph { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: var(--line); }
 .card__t { margin-top: 14px; }
 .card__x { margin-top: 12px; font-size: 14.5px; line-height: 1.7; color: var(--tx-2); }
 
@@ -573,6 +575,14 @@ textarea.in { min-height: 128px; resize: vertical; line-height: 1.65; }
 .crumb i { font-style: normal; opacity: .45; }
 
 /* 본문 — 읽는 글 */
+/* 본문 비교표 — 좁은 화면에서는 표 안에서만 가로로 밉니다 (페이지는 안 밀립니다) */
+.tbl-wrap { margin-top: 26px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.tbl { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 14.5px; }
+.tbl th, .tbl td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.tbl th { color: var(--tx-3); font-size: 12.5px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+.tbl td { color: var(--tx-2); line-height: 1.6; word-break: keep-all; }
+.tbl tr:last-child td { border-bottom: 0; }
+
 .doc { max-width: 46em; }
 .doc h2 { font-size: clamp(24px, 2.9vw, 40px); font-weight: 800; letter-spacing: -.035em; line-height: 1.24; margin-top: clamp(46px, 6vw, 78px); }
 .doc h3 { font-size: clamp(18px, 1.8vw, 25px); font-weight: 800; letter-spacing: -.028em; margin-top: clamp(30px, 3.6vw, 46px); }
