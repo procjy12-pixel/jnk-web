@@ -281,6 +281,11 @@
   const done    = $('#done');
   const doneBox = $('#doneBox');
   const errEl   = $('#formErr');
+
+  /* 밀린 문의 재전송은 폼이 없는 페이지에서도 돌립니다.
+     전송에 실패한 손님이 다음에 어느 페이지로 들어올지 모릅니다. */
+  setTimeout(밀린것보내기, 3000);
+
   if (!form) return;
 
   const val = (id) => ($(id)?.value || '').trim();
@@ -369,21 +374,30 @@
 
   /* 원장에 한 건 남깁니다. 실패해도 접수 결과를 바꾸지 않습니다 —
      기록이 안 됐다고 손님에게 "실패했다" 고 할 일은 아니니까요. */
-  async function logLedger(payload, mailed) {
-    if (!LEDGER) return false;
+  const 밀린칸 = 'jnk_ledger_queue';
+
+  function 봉투(payload, mailed) {
+    return Object.assign({}, payload, {
+      token: LEDGER_TOKEN,
+      mailed: !!mailed,
+      ref: document.referrer || '(직접)',
+      page: location.pathname
+    });
+  }
+
+  /* 워커에 한 건 밀어 넣습니다.
+     keepalive 를 켜 둡니다 — 손님이 '보내기' 누르자마자 창을 닫아도 요청은 끝까지 갑니다.
+     (그게 없으면 브라우저가 페이지와 함께 요청을 죽입니다. 문의가 사라지는 흔한 경로입니다) */
+  async function 밀기(봉, ms = 8000) {
     const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 8000);
+    const timer = setTimeout(() => ctl.abort(), ms);
     try {
       const res = await fetch(LEDGER, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Object.assign({}, payload, {
-          token: LEDGER_TOKEN,
-          mailed: !!mailed,
-          ref: document.referrer || '(직접)',
-          page: location.pathname
-        })),
-        signal: ctl.signal
+        body: JSON.stringify(봉),
+        signal: ctl.signal,
+        keepalive: true
       });
       const j = await res.json().catch(() => null);
       return !!j && j.ok === true;
@@ -393,6 +407,37 @@
       clearTimeout(timer);
     }
   }
+
+  function 쟁이기(봉) {
+    try {
+      const q = JSON.parse(localStorage.getItem(밀린칸) || '[]');
+      q.push(봉);
+      localStorage.setItem(밀린칸, JSON.stringify(q.slice(-20)));
+    } catch (e) {}
+  }
+
+  /* 워커가 잠깐 죽어 있었으면 브라우저에 쟁여 뒀다가 다음에 들어올 때 올려 보냅니다.
+     이 손님이 다시 안 들어오면 못 살립니다 — 그래서 메일과 원장을 둘 다 겁니다. */
+  async function 밀린것보내기() {
+    let q;
+    try { q = JSON.parse(localStorage.getItem(밀린칸) || '[]'); } catch (e) { return; }
+    if (!q.length) return;
+    const 남은 = [];
+    for (const 봉 of q) {
+      const 됨 = await 밀기(봉, 6000);
+      if (!됨) 남은.push(봉);
+    }
+    try { localStorage.setItem(밀린칸, JSON.stringify(남은)); } catch (e) {}
+  }
+
+  async function logLedger(payload, mailed) {
+    if (!LEDGER) return false;
+    const 봉 = 봉투(payload, mailed);
+    const 됨 = await 밀기(봉);
+    if (!됨) 쟁이기(봉);        // 지금 못 넣었으면 버리지 않고 쟁여 둡니다
+    return 됨;
+  }
+
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();

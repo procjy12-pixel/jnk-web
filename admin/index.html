@@ -100,7 +100,7 @@
     </div>
     <div class="kpi__i">
       <div class="kpi__v" id="kpiInq">—</div>
-      <div class="kpi__k">원장에 쌓인 문의<br>아래에서 비밀번호를 넣으면 나옵니다</div>
+      <div class="kpi__k">아직 처리 안 한 문의<br>아래에서 비밀번호를 넣으면 나옵니다</div>
     </div>
     <div class="kpi__i">
       <div class="kpi__v" id="kpiWired">—</div>
@@ -336,25 +336,36 @@
      비밀번호 없이는 워커가 아무것도 돌려주지 않는다 — 고객 연락처가 들어 있기 때문이다. */
   (function () {
     var LIST = 'https://jnk-inquiry.chlwodud2770.workers.dev/list?limit=100';
+    var SEEN = 'https://jnk-inquiry.chlwodud2770.workers.dev/seen';
     var SAVED = 'jnk_admin_key';
     var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
 
+    var 마지막키 = '';
+
     function 그리기(j) {
       var items = j.items || [];
-      $('kpiInq').innerHTML = (j.총건수 || 0) + '<small>건</small>';
+      var 미확인 = j.미확인 || 0;
+      $('kpiInq').innerHTML = 미확인 + '<small>건</small>';
+      $('kpiInq').style.color = 미확인 ? 'var(--red)' : '';
+      document.title = (미확인 ? '(' + 미확인 + ') ' : '') + '운영 대시보드 | 제이앤케이';
       var 최근 = items.filter(function (x) { return (Date.now() - Date.parse(x.at)) < 7 * 864e5; }).length;
       var 실패 = items.filter(function (x) { return x.메일 !== '성공'; }).length;
-      $('inqMsg').textContent = '최근 7일 ' + 최근 + '건' + (실패 ? ' · 메일 실패 ' + 실패 + '건' : '');
+      $('inqMsg').innerHTML = (미확인 ? '<b style="color:var(--red)">처리 안 한 문의 ' + 미확인 + '건</b> · ' : '전부 처리했습니다 · ') +
+        '최근 7일 ' + 최근 + '건' + (실패 ? ' · <b style="color:var(--red)">메일 실패 ' + 실패 + '건</b>' : '');
       if (!items.length) { $('inqBox').innerHTML = '<p class="sm" style="color:var(--tx-3)">아직 들어온 문의가 없습니다.</p>'; return; }
       var h = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13.5px">' +
         '<tr style="text-align:left;color:var(--tx-3)">' +
-        ['접수', '브랜드', '담당자', '연락처', '품목 · 수량', '내용', '메일', '유입'].map(function (x) {
+        ['', '접수', '브랜드', '담당자', '연락처', '품목 · 수량', '내용', '메일', '유입'].map(function (x) {
           return '<th style="padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap">' + x + '</th>'; }).join('') + '</tr>';
       items.forEach(function (x) {
         var d = new Date(x.at);
         var 때 = (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-        h += '<tr style="border-bottom:1px solid var(--line)">' +
+        h += '<tr style="border-bottom:1px solid var(--line)' + (x.확인 ? ';opacity:.45' : '') + '">' +
+          '<td style="padding:9px 10px;white-space:nowrap">' +
+            '<button class="btn btn--sm" data-id="' + esc(x.id) + '" data-on="' + (x.확인 ? '1' : '0') + '" ' +
+            'style="padding:4px 10px;font-size:12px' + (x.확인 ? '' : ';border-color:var(--red);color:var(--red)') + '">' +
+            (x.확인 ? '되돌리기' : '확인') + '</button></td>' +
           '<td style="padding:9px 10px;white-space:nowrap;color:var(--tx-3)">' + 때 + '</td>' +
           '<td style="padding:9px 10px">' + esc(x.브랜드) + '</td>' +
           '<td style="padding:9px 10px;white-space:nowrap">' + esc(x.담당자) + '</td>' +
@@ -367,6 +378,19 @@
           '</tr>';
       });
       $('inqBox').innerHTML = h + '</table></div>';
+      // 확인 단추 — 문의를 지우지 않고 표시만 바꿉니다
+      [].forEach.call($('inqBox').querySelectorAll('button[data-id]'), function (b) {
+        b.addEventListener('click', function () {
+          b.disabled = true; b.textContent = '…';
+          fetch(SEEN, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-jnk-key': 마지막키 },
+            body: JSON.stringify({ id: b.getAttribute('data-id'), 확인: b.getAttribute('data-on') !== '1' }),
+          }).then(function (r) { return r.json(); })
+            .then(function (k) { if (k && k.ok) 불러오기(마지막키); else { b.disabled = false; b.textContent = '실패'; } })
+            .catch(function () { b.disabled = false; b.textContent = '실패'; });
+        });
+      });
     }
 
     function 불러오기(key) {
@@ -377,6 +401,7 @@
         .then(function (o) {
           if (!o.j || o.j.ok !== true) { $('inqMsg').textContent = o.s === 401 ? '비밀번호가 다릅니다' : '불러오지 못했습니다'; return; }
           try { localStorage.setItem(SAVED, key); } catch (e) {}
+          마지막키 = key;
           그리기(o.j);
         })
         .catch(function () { $('inqMsg').textContent = '원장에 연결하지 못했습니다'; });
@@ -388,6 +413,7 @@
       if (saved) { $('inqKey').value = saved; 불러오기(saved); }
       $('inqLoad').addEventListener('click', function () { 불러오기($('inqKey').value.trim()); });
       $('inqKey').addEventListener('keydown', function (e) { if (e.key === 'Enter') 불러오기($('inqKey').value.trim()); });
+      setInterval(function () { if (마지막키 && !document.hidden) 불러오기(마지막키); }, 300000);
     });
   })();
 
