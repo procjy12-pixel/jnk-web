@@ -372,7 +372,8 @@
           '<td style="padding:9px 10px;white-space:nowrap"><a href="tel:' + esc(x.연락처).replace(/[^0-9+]/g, '') + '">' + esc(x.연락처) + '</a>' +
             (x.이메일 ? '<br><a href="mailto:' + esc(x.이메일) + '" style="color:var(--tx-3)">' + esc(x.이메일) + '</a>' : '') + '</td>' +
           '<td style="padding:9px 10px">' + esc(x.품목) + (x.수량 ? '<br><span style="color:var(--tx-3)">' + esc(x.수량) + '</span>' : '') + '</td>' +
-          '<td style="padding:9px 10px;max-width:340px">' + esc(x.내용).slice(0, 300) + '</td>' +
+          '<td style="padding:9px 10px;min-width:260px;max-width:420px;white-space:pre-wrap;word-break:keep-all;line-height:1.55">' +
+            esc(x.내용).slice(0, 1200) + (x.내용 && x.내용.length > 1200 ? ' …' : '') + '</td>' +
           '<td style="padding:9px 10px;white-space:nowrap;color:' + (x.메일 === '성공' ? 'var(--tx-3)' : 'var(--red)') + '">' + esc(x.메일) + '</td>' +
           '<td style="padding:9px 10px;color:var(--tx-3);max-width:150px;word-break:break-all">' + esc(x.유입).slice(0, 60) + '</td>' +
           '</tr>';
