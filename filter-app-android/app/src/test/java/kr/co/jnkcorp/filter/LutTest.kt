@@ -103,6 +103,18 @@ class LutTest {
     private fun assetsDir(): File =
         listOf(File("src/main/assets"), File("app/src/main/assets")).first { it.exists() }
 
+    @Test fun cropBoxMovesAlongFreeAxis() {
+        // 세로 사진 3000x4000 을 16:9(세로) 로 자르면 높이가 남지 않고 폭이 남는다… 가로↔세로 바꾸면 높이가 남음
+        val top = cropBox(4000, 3000, Frame.WIDE, false, 0.5f, 0f)
+        assertEquals(0, top[1]); assertEquals(4000, top[2]); assertEquals(2250, top[3])
+        val bottom = cropBox(4000, 3000, Frame.WIDE, false, 0.5f, 1f)
+        assertEquals(3000 - 2250, bottom[1])
+        val sq = cropBox(4000, 3000, Frame.SQUARE, false, 0f, 0.5f)
+        assertEquals(0, sq[0]); assertEquals(3000, sq[2])
+        val orig = cropBox(4000, 3000, Frame.ORIGINAL, false, 0f, 0f)
+        assertEquals(4000, orig[2]); assertEquals(3000, orig[3])
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

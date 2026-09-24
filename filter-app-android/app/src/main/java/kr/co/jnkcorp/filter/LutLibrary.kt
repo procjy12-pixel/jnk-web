@@ -11,6 +11,8 @@ import java.io.File
 class LutEntry(
     val name: String, val sub: String, val lut: Lut3D?,
     val category: String, val look: Look? = null, val file: File? = null,
+    /** 설정 저장용 고유 키 (look:… / preset:… / file:…) */
+    val key: String = look?.let { "look:${it.name}" } ?: file?.let { "file:${it.name}" } ?: "preset:$name",
 )
 
 /** 사용자가 만들거나 가져온 LUT 를 앱 저장소(files/luts 폴더에 .cube 파일로)에 둡니다. */
@@ -26,7 +28,7 @@ class LutLibrary(private val ctx: Context) {
     fun bundled(): List<LutEntry> = Presets.all.mapNotNull { p ->
         try {
             val lut = ctx.assets.open("luts/${p.path}.cube").reader().use { Lut3D.parseCube(it, p.name) }
-            LutEntry(p.name, p.category, lut, p.category)
+            LutEntry(p.name, p.category, lut, p.category, key = "preset:${p.path}")
         } catch (e: Exception) {
             null
         }

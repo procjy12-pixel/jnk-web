@@ -9,7 +9,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.ImageDecoder
-import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -22,6 +21,7 @@ import android.text.InputType
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.ViewConfiguration
 import android.view.View
 import android.view.animation.DecelerateInterpolator
 import android.widget.Button
@@ -35,18 +35,10 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
+import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
-
-/** 프레임(자르기) 비율. 가로 사진 기준 가로÷세로, 0 이면 원본 그대로 */
-enum class Frame(val label: String, val ratio: Float) {
-    ORIGINAL("원본", 0f),
-    SCOPE("시네마스코프", 2.39f),
-    WIDE("16:9", 16f / 9f),
-    STD("4:3", 4f / 3f),
-    PHOTO("3:2", 3f / 2f),
-    SQUARE("1:1", 1f),
-}
 
 class MainActivity : Activity() {
 
@@ -68,6 +60,16 @@ class MainActivity : Activity() {
     // 프레임
     private var frame = Frame.ORIGINAL
     private var frameFlip = false
+    private var cropX = 0.5f
+    private var cropY = 0.5f
+
+    // 설정 기억
+    private lateinit var store: SettingsStore
+    private var pendingLutKey: String? = null
+    private var ready = false                 // LUT 목록을 다 읽었는지
+    private var autoSaveNext = false          // 방금 찍은 사진을 불러오면 바로 저장
+    private lateinit var recentScroll: HorizontalScrollView
+    private lateinit var recentRow: LinearLayout
 
     // LUT 목록과 적용 설정
     private val entries = ArrayList<LutEntry>()
@@ -117,29 +119,86 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = LutLibrary(this)
+        store = SettingsStore(this)
         captureUri = savedInstanceState?.getString(KEY_CAPTURE)?.let(Uri::parse)
+        autoSaveNext = savedInstanceState?.getBoolean(KEY_AUTOSAVE) ?: false
+        // 지난번에 쓰던 설정 그대로 (LUT 는 목록을 읽은 뒤에 고름)
+        store.current?.let { applyValues(it); pendingLutKey = it.lutKey }
         setContentView(buildUi())
 
         bg.execute {
             val all = library.builtIns() + library.bundled() + library.userLuts()
             main.post {
                 entries.clear(); entries.addAll(all)
-                selected = entries.firstOrNull { it.look == Look.TEAL_ORANGE }
+                selected = pendingLutKey?.let { k -> entries.firstOrNull { it.key == k } }
+                    ?: if (pendingLutKey == null && store.current == null) entries.firstOrNull { it.look == Look.TEAL_ORANGE } else entries.firstOrNull()
+                selected?.let { category = it.category }
                 makerBase = entries.firstOrNull()
+                ready = true
+                rebuildRecent()
                 rebuildCategories()
                 rebuildStrip()
                 rebuildMaker()
                 if (intent?.action == Intent.ACTION_SEND) {
                     @Suppress("DEPRECATION")
                     (intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))?.let { load(it) }
+                } else if (preview != null) {
+                    render()
+                    maybeAutoSave()
                 }
             }
+        }
+
+        // 앱을 열자마자 카메라
+        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND) capture()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        store.current = currentSettings()
+    }
+
+    private fun currentSettings() = Settings(
+        selected?.key, selected?.name ?: "원본", intensity, grain, vignette, adjust.copy(),
+        frame, frameFlip, cropX, cropY,
+    )
+
+    /** 숫자 값들만 적용 (LUT 선택은 따로) */
+    private fun applyValues(s: Settings) {
+        intensity = s.intensity; grain = s.grain; vignette = s.vignette
+        adjust = s.adjust.copy()
+        frame = s.frame; frameFlip = s.frameFlip; cropX = s.cropX; cropY = s.cropY
+    }
+
+    /** "최근" 에서 고른 설정을 통째로 적용 */
+    private fun applySettings(s: Settings) {
+        applyValues(s)
+        selected = entries.firstOrNull { it.key == s.lutKey } ?: selected
+        selected?.let { category = it.category }
+        rebuildAdjust(); rebuildFrames(); rebuildCategories(); rebuildStrip()
+        if (previewFull != null) applyFrame() else render()
+        toast("‘${s.label()}’ 불러옴")
+    }
+
+    private fun rebuildRecent() {
+        recentRow.removeAllViews()
+        val list = store.recent()
+        recentScroll.visibility = if (list.isEmpty()) View.GONE else View.VISIBLE
+        recentRow.addView(label("최근", 11f, orange).apply { setPadding(0, 0, dp(8), 0) })
+        list.forEach { s -> recentRow.addView(smallChip(s.label(), false) { applySettings(s) }) }
+    }
+
+    private fun maybeAutoSave() {
+        if (autoSaveNext && ready && preview != null) {
+            autoSaveNext = false
+            savePhoto()
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         captureUri?.let { outState.putString(KEY_CAPTURE, it.toString()) }
+        outState.putBoolean(KEY_AUTOSAVE, autoSaveNext)
     }
 
     // ───────────────────────── 화면 ─────────────────────────
@@ -203,14 +262,29 @@ class MainActivity : Activity() {
                 return true
             }
         })
+        // 프레임으로 잘렸을 때 한 손가락으로 끌면 잘리는 위치를 옮깁니다
+        val slop = ViewConfiguration.get(this).scaledTouchSlop
+        var downX = 0f; var downY = 0f; var lastX = 0f; var lastY = 0f
+        var dragging = false
         stage.setOnTouchListener { _, e ->
             scaler.onTouchEvent(e)
             when (e.actionMasked) {
-                MotionEvent.ACTION_DOWN -> if (preview != null) main.postDelayed(showOriginal, 120)
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.x; downY = e.y; lastX = e.x; lastY = e.y; dragging = false
+                    if (preview != null) main.postDelayed(showOriginal, 250)
+                }
+                MotionEvent.ACTION_MOVE -> if (e.pointerCount == 1 && !zooming && frame != Frame.ORIGINAL && previewFull != null) {
+                    if (!dragging && hypot(e.x - downX, e.y - downY) > slop) {
+                        dragging = true
+                        main.removeCallbacks(showOriginal)
+                    }
+                    if (dragging) panCrop(e.x - lastX, e.y - lastY)
+                    lastX = e.x; lastY = e.y
+                }
                 MotionEvent.ACTION_POINTER_DOWN -> { main.removeCallbacks(showOriginal); showFiltered() }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     main.removeCallbacks(showOriginal)
-                    showFiltered()
+                    if (dragging) { dragging = false; applyFrame() } else showFiltered()
                     springBack()
                 }
             }
@@ -243,6 +317,14 @@ class MainActivity : Activity() {
 
         // LUT 적용 패널: 분류 → LUT 목록 → 보정 슬라이더(스크롤)
         filterPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        recentScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; visibility = View.GONE }
+        recentRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(8), dp(12), 0)
+        }
+        recentScroll.addView(recentRow)
+        filterPanel.addView(recentScroll)
         val catScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
         categoryRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -303,11 +385,32 @@ class MainActivity : Activity() {
     private fun rebuildFrames() {
         frameRow.removeAllViews()
         Frame.values().forEach { f ->
-            frameRow.addView(smallChip(f.label, f == frame) { frame = f; rebuildFrames(); applyFrame() })
+            frameRow.addView(smallChip(f.label, f == frame) {
+                if (frame == Frame.ORIGINAL && f != Frame.ORIGINAL) toast("사진을 끌어서 잘리는 위치를 옮길 수 있어요")
+                frame = f; rebuildFrames(); applyFrame()
+            })
         }
         frameRow.addView(smallChip(if (frameFlip) "세로 ↕" else "가로 ↔", frameFlip) {
             frameFlip = !frameFlip; rebuildFrames(); applyFrame()
         })
+        if (::store.isInitialized) {
+            frameRow.addView(smallChip(if (store.autoSave) "촬영 후 자동저장 켬" else "촬영 후 자동저장 끔", store.autoSave) {
+                store.autoSave = !store.autoSave; rebuildFrames()
+            })
+        }
+    }
+
+    /** 잘린 영역을 손가락 움직임만큼 옮깁니다. 끄는 동안은 필터 없이 빠르게 보여 줍니다. */
+    private fun panCrop(dx: Float, dy: Float) {
+        val full = previewFull ?: return
+        val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        val scale = min(image.width.toFloat() / b[2], image.height.toFloat() / b[3])
+        val freeX = full.width - b[2]
+        val freeY = full.height - b[3]
+        if (freeX > 0) cropX = (cropX - dx / scale / freeX).coerceIn(0f, 1f)
+        if (freeY > 0) cropY = (cropY - dy / scale / freeY).coerceIn(0f, 1f)
+        val n = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        image.setImageBitmap(Bitmap.createBitmap(full, n[0], n[1], n[2], n[3]))
     }
 
     private fun rebuildCategories() {
@@ -592,7 +695,10 @@ class MainActivity : Activity() {
         if (requestCode == REQ_CAMERA) {
             val uri = captureUri ?: return
             captureUri = null
-            if (resultCode == RESULT_OK) load(uri) else try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
+            if (resultCode == RESULT_OK) {
+                autoSaveNext = store.autoSave
+                load(uri)
+            } else try { contentResolver.delete(uri, null, null) } catch (_: Exception) {}
             return
         }
         val uri = data?.data
@@ -617,6 +723,7 @@ class MainActivity : Activity() {
                 hint.visibility = View.GONE
                 rebuildMaker()
                 applyFrame()
+                maybeAutoSave()
             }
         }
     }
@@ -624,9 +731,9 @@ class MainActivity : Activity() {
     /** 지금 프레임 비율로 미리보기를 다시 자릅니다. */
     private fun applyFrame() {
         val full = previewFull ?: return
-        val r = cropRect(full.width, full.height)
-        val bmp = if (r.width() == full.width && r.height() == full.height) full
-        else Bitmap.createBitmap(full, r.left, r.top, r.width(), r.height())
+        val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        val bmp = if (b[2] == full.width && b[3] == full.height) full
+        else Bitmap.createBitmap(full, b[0], b[1], b[2], b[3])
         preview = bmp
         previewPx = pixels(bmp)
         val t = Bitmap.createScaledBitmap(bmp, 160, max(1, 160 * bmp.height / bmp.width), true)
@@ -635,19 +742,6 @@ class MainActivity : Activity() {
         image.setImageBitmap(bmp)
         renderThumbs()
         render()
-    }
-
-    private fun cropRect(w: Int, h: Int): Rect {
-        if (frame.ratio == 0f) return Rect(0, 0, w, h)
-        val landscape = w >= h
-        val target = if (landscape != frameFlip) frame.ratio else 1f / frame.ratio
-        return if (w.toFloat() / h > target) {
-            val cw = (h * target).roundToInt().coerceIn(1, w)
-            Rect((w - cw) / 2, 0, (w - cw) / 2 + cw, h)
-        } else {
-            val ch = (w / target).roundToInt().coerceIn(1, h)
-            Rect(0, (h - ch) / 2, w, (h - ch) / 2 + ch)
-        }
     }
 
     private fun loadReference(uri: Uri) {
@@ -744,15 +838,17 @@ class MainActivity : Activity() {
         val prev = preview ?: return
         val grade = currentGrade()
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
-        val f = frame; val flip = frameFlip
+        val f = frame; val flip = frameFlip; val cx = cropX; val cy = cropY
+        if (!makerMode) { store.pushRecent(currentSettings()); rebuildRecent() }
+        store.current = currentSettings()
         toast("원본 해상도로 저장하는 중…")
         bg.execute {
             val ok = try {
                 val full = decode(uri, FULL_MAX)
-                val r = cropRectFor(full.width, full.height, f, flip)
-                val w = r.width(); val h = r.height()
+                val b = cropBox(full.width, full.height, f, flip, cx, cy)
+                val w = b[2]; val h = b[3]
                 val px = IntArray(w * h)
-                full.getPixels(px, 0, w, r.left, r.top, w, h)
+                full.getPixels(px, 0, w, b[0], b[1], w, h)
                 full.recycle()
                 val scale = max(w, h).toFloat() / max(prev.width, prev.height)
                 Pipeline.process(px, w, h, grade, scale)
@@ -763,12 +859,6 @@ class MainActivity : Activity() {
             }
             main.post { toast(if (ok) "갤러리 Pictures/FOFilter 에 저장했습니다" else "저장하지 못했습니다") }
         }
-    }
-
-    private fun cropRectFor(w: Int, h: Int, f: Frame, flip: Boolean): Rect {
-        val saveF = frame; val saveFlip = frameFlip
-        frame = f; frameFlip = flip
-        return cropRect(w, h).also { frame = saveF; frameFlip = saveFlip }
     }
 
     private fun writeToGallery(bmp: Bitmap, tag: String): Uri? {
@@ -931,6 +1021,7 @@ class MainActivity : Activity() {
         private const val REQ_CUBE = 3
         private const val REQ_CAMERA = 4
         private const val KEY_CAPTURE = "capture"
+        private const val KEY_AUTOSAVE = "autosave"
         private const val PREVIEW_MAX = 1400
         private const val FULL_MAX = 4096
     }
