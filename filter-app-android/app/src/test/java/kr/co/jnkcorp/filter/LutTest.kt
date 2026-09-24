@@ -1,0 +1,145 @@
+package kr.co.jnkcorp.filter
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.io.File
+import java.io.StringReader
+import kotlin.math.abs
+
+class LutTest {
+
+    private val o = FloatArray(3)
+
+    @Test fun identityLutReturnsSameColor() {
+        val lut = Lut3D.identity(17)
+        for (c in listOf(floatArrayOf(0f, 0f, 0f), floatArrayOf(0.123f, 0.5f, 0.987f), floatArrayOf(1f, 1f, 1f))) {
+            lut.sample(c[0], c[1], c[2], o)
+            for (i in 0..2) assertEquals(c[i], o[i], 1e-5f)
+        }
+    }
+
+    @Test fun cubeRoundTrip() {
+        val lut = Look.TEAL_ORANGE.bake().withTitle("테스트 \"룩\"")
+        val back = Lut3D.parseCube(StringReader(lut.toCube()))
+        assertEquals(lut.size, back.size)
+        assertEquals("테스트 '룩'", back.title)
+        for (i in lut.data.indices) assertEquals(lut.data[i], back.data[i], 1e-5f)
+    }
+
+    @Test fun parsesDomainAndComments() {
+        val cube = """
+            # comment
+            TITLE "tiny"
+            LUT_3D_SIZE 2
+            DOMAIN_MIN 0 0 0
+            DOMAIN_MAX 2 2 2
+            0 0 0
+            2 0 0
+            0 2 0
+            2 2 0
+            0 0 2
+            2 0 2
+            0 2 2
+            2 2 2
+        """.trimIndent()
+        val lut = Lut3D.parseCube(StringReader(cube))
+        lut.sample(0.25f, 0.5f, 0.75f, o)
+        assertEquals(0.25f, o[0], 1e-5f); assertEquals(0.5f, o[1], 1e-5f); assertEquals(0.75f, o[2], 1e-5f)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsTruncatedCube() {
+        Lut3D.parseCube(StringReader("LUT_3D_SIZE 2\n0 0 0\n1 1 1\n"))
+    }
+
+    @Test fun makerWithDefaultsIsIdentity() {
+        val lut = LutMaker.build(null, null, MakerParams(), size = 9)
+        val id = Lut3D.identity(9)
+        for (i in lut.data.indices) assertEquals(id.data[i], lut.data[i], 1e-4f)
+    }
+
+    @Test fun makerAdjustmentsGoTheRightWay() {
+        LutMaker.build(null, null, MakerParams(temperature = 1f)).sample(0.5f, 0.5f, 0.5f, o)
+        assertTrue("따뜻하게 하면 빨강 > 파랑", o[0] > o[2])
+        LutMaker.build(null, null, MakerParams(saturation = -1f)).sample(0.9f, 0.2f, 0.1f, o)
+        assertTrue("채도 -100 이면 흑백", abs(o[0] - o[1]) < 1e-3 && abs(o[1] - o[2]) < 1e-3)
+        LutMaker.build(null, null, MakerParams(fade = 1f)).sample(0f, 0f, 0f, o)
+        assertTrue("페이드는 블랙을 들어올림", o[0] > 0.1f)
+        LutMaker.build(null, null, MakerParams(exposure = 1f)).sample(0.4f, 0.4f, 0.4f, o)
+        assertTrue("노출 +1 은 밝게", o[0] > 0.5f)
+    }
+
+    @Test fun monoDetection() {
+        assertTrue(Look.LEICA_MONO.bake().isMono)
+        assertFalse(Look.LEICA_CLASSIC.bake().isMono)
+    }
+
+    @Test fun labRoundTrip() {
+        val lab = FloatArray(3)
+        ColorTransfer.rgbToLab(0.8f, 0.4f, 0.2f, lab)
+        ColorTransfer.labToRgb(lab[0], lab[1], lab[2], o)
+        assertEquals(0.8f, o[0], 2e-3f); assertEquals(0.4f, o[1], 2e-3f); assertEquals(0.2f, o[2], 2e-3f)
+    }
+
+    /**
+     * 실제 앱 코드(Pipeline·LutMaker)로 샘플 사진을 처리해 비교표를 만듭니다.
+     * 환경변수 PREVIEW_OUT(출력 폴더)·PREVIEW_SRC(사진, P6 PPM)를 줄 때만 돕니다.
+     * 유닛 테스트는 안드로이드 클래스패스라 ImageIO 가 없어서 PPM 으로 주고받습니다.
+     */
+    @Test fun renderPreviewSheet() {
+        val outDir = System.getenv("PREVIEW_OUT") ?: return
+        val (w, h, px) = readPpm(File(System.getenv("PREVIEW_SRC") ?: return))
+        val ref = System.getenv("PREVIEW_REF")?.let { readPpm(File(it)) }
+
+        val tiles = ArrayList<IntArray>()
+        tiles += px.copyOf()
+        for (l in listOf(Look.TEAL_ORANGE, Look.LEICA_CLASSIC, Look.LEICA_MONO)) {
+            val c = px.copyOf()
+            Pipeline.process(c, w, h, Grade(l.bake(), 1f, l.grain, l.vignette))
+            tiles += c
+        }
+        val custom = MakerParams(contrast = 0.3f, saturation = -0.15f, temperature = 0.2f, fade = 0.4f,
+            shadowHue = 190f, shadowAmount = 0.6f, highlightHue = 35f, highlightAmount = 0.5f)
+        val c1 = px.copyOf()
+        Pipeline.process(c1, w, h, Grade(LutMaker.build(null, null, custom), 1f, 0f, 0f))
+        tiles += c1
+        if (ref != null) {
+            val t = ColorTransfer.from(px, ref.third)
+            val c2 = px.copyOf()
+            Pipeline.process(c2, w, h, Grade(LutMaker.build(null, t, MakerParams()), 1f, 0f, 0f))
+            tiles += c2
+        }
+        tiles.forEachIndexed { i, p -> writePpm(File(outDir, "tile$i.ppm"), w, h, p) }
+        File(outDir, "TealOrange.cube").writeText(Look.TEAL_ORANGE.bake().withTitle("Teal & Orange").toCube())
+    }
+
+    private fun readPpm(f: File): Triple<Int, Int, IntArray> {
+        val bytes = f.readBytes()
+        var pos = 0
+        fun token(): String {
+            while (bytes[pos].toInt().toChar().isWhitespace()) pos++
+            val st = pos
+            while (!bytes[pos].toInt().toChar().isWhitespace()) pos++
+            return String(bytes, st, pos - st)
+        }
+        require(token() == "P6")
+        val w = token().toInt(); val h = token().toInt(); token()
+        pos++
+        val px = IntArray(w * h) { i ->
+            val o = pos + i * 3
+            (0xFF shl 24) or ((bytes[o].toInt() and 0xFF) shl 16) or ((bytes[o + 1].toInt() and 0xFF) shl 8) or (bytes[o + 2].toInt() and 0xFF)
+        }
+        return Triple(w, h, px)
+    }
+
+    private fun writePpm(f: File, w: Int, h: Int, px: IntArray) {
+        val head = "P6\n$w $h\n255\n".toByteArray()
+        val body = ByteArray(w * h * 3)
+        for (i in px.indices) {
+            body[i * 3] = (px[i] shr 16).toByte(); body[i * 3 + 1] = (px[i] shr 8).toByte(); body[i * 3 + 2] = px[i].toByte()
+        }
+        f.writeBytes(head + body)
+    }
+}
