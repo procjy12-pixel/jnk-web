@@ -156,6 +156,62 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 지난번에 앱이 꺼졌으면, 다른 걸 만들기 전에 먼저 이유를 보여 줌
+        val report = CrashReport.pending(this)
+        if (report != null) { showCrashScreen(report, savedInstanceState); return }
+        startNormal(savedInstanceState, allowAutoCamera = true)
+    }
+
+    private fun showCrashScreen(report: String, saved: Bundle?) {
+        val col = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#0B0B0B"))
+            setPadding(dp(16), dp(24), dp(16), dp(16))
+        }
+        col.addView(TextView(this).apply {
+            text = "지난번에 앱이 꺼졌어요"
+            textSize = 18f; setTextColor(Color.WHITE)
+        })
+        col.addView(TextView(this).apply {
+            text = "아래 내용을 ‘복사’해서 보내 주시면 원인을 고칠 수 있어요."
+            textSize = 13f; setTextColor(Color.parseColor("#BBBBBB")); setPadding(0, dp(6), 0, dp(10))
+        })
+        col.addView(ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#161616"))
+            addView(TextView(this@MainActivity).apply {
+                text = report; textSize = 10f; setTextColor(Color.parseColor("#DDDDDD"))
+                setTextIsSelectable(true); setPadding(dp(10), dp(10), dp(10), dp(10))
+            })
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        fun btn(t: String, filled: Boolean, f: () -> Unit) = Button(this).apply {
+            text = t; isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(22).toFloat()
+                if (filled) setColor(Color.parseColor("#E8743B")) else setStroke(dp(1), Color.parseColor("#555555"))
+            }
+            setOnClickListener { f() }
+        }
+        val lp = { LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) } }
+        col.addView(btn("복사", true) {
+            getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 오류", report))
+            Toast.makeText(this, "복사했어요", Toast.LENGTH_SHORT).show()
+        }, lp())
+        col.addView(btn("앱 계속 · 폰 기본 카메라로", false) {
+            CrashReport.clear(this)
+            getSharedPreferences("fofilter", MODE_PRIVATE).edit().putBoolean("appCamera", false).apply()
+            startNormal(saved, allowAutoCamera = false)
+        }, lp())
+        col.addView(btn("앱 계속 · 앱 카메라 다시 시도", false) {
+            CrashReport.clear(this)
+            startNormal(saved, allowAutoCamera = true)
+        }, lp())
+        setContentView(col)
+    }
+
+    private fun startNormal(savedInstanceState: Bundle?, allowAutoCamera: Boolean) {
+        CrashReport.step(this, "main:start")
         library = LutLibrary(this)
         store = SettingsStore(this)
         watermark = store.watermark
@@ -188,43 +244,14 @@ class MainActivity : Activity() {
             }
         }
 
-        // 지난번에 앱이 갑자기 꺼졌으면 오류 내용을 보여 주고, 이번엔 카메라를 자동으로 열지 않음
-        val crashed = showLastCrash()
+        CrashReport.step(this, "main:ui-ready")
         // 앱을 열자마자 카메라
-        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND && !crashed) capture()
-    }
-
-    private fun showLastCrash(): Boolean {
-        val f = FoApp.crashFile(this)
-        if (!f.exists()) return false
-        val text = runCatching { f.readText() }.getOrDefault("")
-        f.delete()
-        val tv = TextView(this).apply {
-            this.text = text
-            textSize = 10f
-            setTextIsSelectable(true)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-        }
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle("지난번에 앱이 꺼졌어요")
-            .setMessage("아래 내용을 복사해서 보내 주시면 고칠 수 있어요. 이번엔 카메라를 자동으로 열지 않았어요.")
-            .setView(ScrollView(this).apply { addView(tv) })
-            .setPositiveButton("복사") { _, _ ->
-                val cm = getSystemService(android.content.ClipboardManager::class.java)
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 오류", text))
-                toast("복사했어요")
-            }
-            .setNegativeButton("닫기", null)
-            .setNeutralButton("기본 카메라로 바꾸기") { _, _ ->
-                store.useAppCamera = false; rebuildFrames()
-                toast("앞으로 폰 기본 카메라로 찍어요")
-            }
-            .show()
-        return true
+        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND && allowAutoCamera) capture()
     }
 
     override fun onPause() {
         super.onPause()
+        if (!::store.isInitialized) return
         // LUT 목록을 다 읽기 전엔 지금 선택이 비어 있으므로, 기억해 둔 설정을 덮어쓰지 않음
         if (ready) store.current = currentSettings()
     }

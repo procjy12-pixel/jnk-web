@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "kr.co.jnkcorp.filter"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "kr.co.jnkcorp.filter"
         minSdk = 29
         targetSdk = 34
-        versionCode = 7
-        versionName = "0.6.1"
+        versionCode = 8
+        versionName = "0.6.2"
     }
 
     buildTypes {
@@ -36,10 +36,10 @@ android {
 
 dependencies {
     // 앱 카메라 (CameraX) — 화면은 우리가 그리고, 카메라 제어만 씁니다
-    val camerax = "1.3.4"
+    val camerax = "1.4.2"
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
-    implementation("androidx.activity:activity-ktx:1.8.2")
+    implementation("androidx.activity:activity-ktx:1.9.3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
 }

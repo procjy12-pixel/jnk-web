@@ -43,7 +43,20 @@ class LaunchTest {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
         ShadowLooper.idleMainLooper()
         org.junit.Assert.assertNull("꺼진 직후엔 카메라를 자동으로 열지 않음", shadowOf(ctl.get()).nextStartedActivity)
+        // 오류 화면의 '앱 계속 · 폰 기본 카메라로' 를 누르면 기록을 지우고 편집 화면으로
+        val root = ctl.get().window.decorView
+        val btn = findByText(root, "앱 계속 · 폰 기본 카메라로")
+        requireNotNull(btn).performClick()
+        ShadowLooper.idleMainLooper()
         org.junit.Assert.assertFalse(FoApp.crashFile(app).exists())
+        org.junit.Assert.assertFalse(SettingsStore(app).useAppCamera)
+        org.junit.Assert.assertNull(shadowOf(ctl.get()).nextStartedActivity)
+    }
+
+    private fun findByText(v: android.view.View, t: String): android.view.View? {
+        if (v is android.widget.TextView && v.text.toString() == t) return v
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) findByText(v.getChildAt(i), t)?.let { return it }
+        return null
     }
 
     @Test fun cameraActivityStartsWithPermission() {

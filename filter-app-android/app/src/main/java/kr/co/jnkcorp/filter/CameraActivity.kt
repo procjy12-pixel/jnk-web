@@ -30,6 +30,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -79,6 +80,7 @@ class CameraActivity : ComponentActivity() {
     private var lastOriginal: Uri? = null
     private var pending = 0
     private var lastRotation = 0
+    private var firstFrame = false
     private val sound = MediaActionSound()
 
     private lateinit var view: ImageView
@@ -114,6 +116,7 @@ class CameraActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashReport.step(this, "camera:create")
         store = SettingsStore(this)
         library = LutLibrary(this)
         cur = store.current ?: defaultSettings()
@@ -134,16 +137,14 @@ class CameraActivity : ComponentActivity() {
             }
         }
 
+        CrashReport.step(this, "camera:ui-ready")
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
-        else requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_PERM)
+        else askCamera.launch(Manifest.permission.CAMERA)
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_PERM) {
-            if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startCamera()
-            else { toast("카메라 권한이 있어야 앱 카메라를 쓸 수 있어요"); status.text = "카메라 권한 없음 · ‘기본 카메라’를 쓰세요" }
-        }
+    private val askCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) startCamera()
+        else { toast("카메라 권한이 있어야 앱 카메라를 쓸 수 있어요"); status.text = "카메라 권한 없음 · ‘기본 카메라’를 쓰세요" }
     }
 
     override fun onResume() { super.onResume(); orientation.enable() }
@@ -167,6 +168,7 @@ class CameraActivity : ComponentActivity() {
     // ───────────────────────── 카메라 ─────────────────────────
 
     private fun startCamera() {
+        CrashReport.step(this, "camera:provider")
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
             try {
@@ -189,6 +191,7 @@ class CameraActivity : ComponentActivity() {
     }
 
     private fun bindUnsafe(p: ProcessCameraProvider) {
+        CrashReport.step(this, "camera:bind")
         p.unbindAll()
         val ratio43 = AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
         analysis = ImageAnalysis.Builder()
@@ -224,6 +227,7 @@ class CameraActivity : ComponentActivity() {
             toast("카메라를 열 수 없습니다: ${e.message}"); null
         }
         setupExposure()
+        CrashReport.step(this, "camera:bound")
     }
 
     /** 카메라 한 장면에 설정을 입혀 화면에 보여 줍니다 (분석 스레드). */
@@ -244,6 +248,7 @@ class CameraActivity : ComponentActivity() {
         runOnUiThread {
             view.setImageBitmap(out)
             wmView.invalidate()
+            if (!firstFrame) { firstFrame = true; CrashReport.step(this, "camera:first-frame") }
         }
     }
 
@@ -545,7 +550,6 @@ class CameraActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_SYSTEM = "system"
-        private const val REQ_PERM = 10
 
         fun defaultSettings() = Settings(
             "look:TEAL_ORANGE", "틸앤오렌지", 1f, 0f, 0.15f, MakerParams(), Frame.ORIGINAL, false, 0.5f, 0.5f,
