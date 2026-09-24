@@ -24,6 +24,36 @@ class LaunchTest {
         println("next activity: ${next?.component}")
     }
 
+    /** 화면을 실제로 측정·배치·그려 봅니다 (onDraw 까지). */
+    private fun drawAll(a: android.app.Activity) {
+        val root = a.window.decorView
+        val w = 1080; val h = 2340
+        root.measure(android.view.View.MeasureSpec.makeMeasureSpec(w, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(h, android.view.View.MeasureSpec.EXACTLY))
+        root.layout(0, 0, w, h)
+        root.draw(android.graphics.Canvas(android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)))
+    }
+
+    @Test fun mainActivityDraws() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        waitReady(ctl.get())
+        drawAll(ctl.get())
+        // 글자 탭(워터마크 편집)에서도
+        findByText(ctl.get().window.decorView, "글자")!!.performClick()
+        ShadowLooper.idleMainLooper()
+        drawAll(ctl.get())
+    }
+
+    @Test fun cameraActivityDraws() {
+        val ctl = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
+        for (i in 0 until 10) { ShadowLooper.idleMainLooper(); Thread.sleep(200) }
+        drawAll(ctl.get())
+        // 사진이 들어온 뒤(워터마크가 실제로 그려질 때)도
+        val view = CameraActivity::class.java.getDeclaredField("view").apply { isAccessible = true }.get(ctl.get()) as android.widget.ImageView
+        view.setImageBitmap(android.graphics.Bitmap.createBitmap(300, 400, android.graphics.Bitmap.Config.ARGB_8888))
+        drawAll(ctl.get())
+    }
+
     private fun waitReady(a: MainActivity) {
         val f = MainActivity::class.java.getDeclaredField("ready").apply { isAccessible = true }
         for (i in 0 until 100) {

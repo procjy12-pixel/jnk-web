@@ -338,7 +338,7 @@ class MainActivity : Activity() {
         canvasBox.addView(overlay, -1, -1)
         wmView = WatermarkView(this).apply {
             watermark = this@MainActivity.watermark
-            photoRect = { photoRect() }
+            photoRect = { this@MainActivity.photoRect() }  // 이름이 같아 자기 자신을 부르지 않게
         }
         canvasBox.addView(wmView, -1, -1)
         hint = TextView(this).apply {

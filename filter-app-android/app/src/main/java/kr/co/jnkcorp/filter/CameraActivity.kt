@@ -404,7 +404,7 @@ class CameraActivity : ComponentActivity() {
         val stage = FrameLayout(this)
         view = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
         stage.addView(view, -1, -1)
-        wmView = WatermarkView(this).apply { watermark = this@CameraActivity.watermark; photoRect = { photoRect() } }
+        wmView = WatermarkView(this).apply { watermark = this@CameraActivity.watermark; photoRect = { this@CameraActivity.photoRect() } }
         stage.addView(wmView, -1, -1)
         focusRing = View(this).apply {
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setStroke(dp(2), Color.WHITE) }
