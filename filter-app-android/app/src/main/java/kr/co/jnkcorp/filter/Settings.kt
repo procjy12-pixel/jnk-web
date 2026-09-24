@@ -69,6 +69,11 @@ class SettingsStore(ctx: Context) {
         get() = prefs.getString("watermark", null)?.let { runCatching { Watermark.fromJson(JSONObject(it)) }.getOrNull() } ?: Watermark()
         set(v) { prefs.edit().putString("watermark", v.toJson().toString()).apply() }
 
+    /** true: 앱 카메라, false: 폰 기본(삼성) 카메라 */
+    var useAppCamera: Boolean
+        get() = prefs.getBoolean("appCamera", true)
+        set(v) { prefs.edit().putBoolean("appCamera", v).apply() }
+
     var autoSave: Boolean
         get() = prefs.getBoolean("autoSave", true)
         set(v) { prefs.edit().putBoolean("autoSave", v).apply() }

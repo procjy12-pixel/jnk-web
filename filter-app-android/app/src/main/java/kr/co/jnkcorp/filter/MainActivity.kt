@@ -194,7 +194,8 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        store.current = currentSettings()
+        // LUT 목록을 다 읽기 전엔 지금 선택이 비어 있으므로, 기억해 둔 설정을 덮어쓰지 않음
+        if (ready) store.current = currentSettings()
     }
 
     private fun currentSettings() = Settings(
@@ -507,6 +508,10 @@ class MainActivity : Activity() {
             frameFlip = !frameFlip; rebuildFrames(); applyFrame()
         })
         if (::store.isInitialized) {
+            frameRow.addView(smallChip(if (store.useAppCamera) "카메라: 앱" else "카메라: 기본(삼성)", store.useAppCamera) {
+                store.useAppCamera = !store.useAppCamera; rebuildFrames()
+                toast(if (store.useAppCamera) "앱 카메라로 찍어요 · 보이는 그대로 찍힘" else "폰 기본 카메라로 찍어요 · 찍은 뒤 필터가 입혀짐")
+            })
             frameRow.addView(smallChip(if (store.autoSave) "촬영 후 자동저장 켬" else "촬영 후 자동저장 끔", store.autoSave) {
                 store.autoSave = !store.autoSave; rebuildFrames()
             })
@@ -765,8 +770,21 @@ class MainActivity : Activity() {
 
     // ───────────────────────── 동작 ─────────────────────────
 
-    /** 기본 카메라 앱으로 찍어서 바로 엽니다. 원본은 Pictures/FOFilter/원본 에 남습니다. */
+    /** 설정에 따라 앱 카메라 또는 폰 기본 카메라로 찍습니다. */
     private fun capture() {
+        if (store.useAppCamera) {
+            if (ready) store.current = currentSettings()
+            startActivityForResult(Intent(this, CameraActivity::class.java), REQ_APP_CAMERA)
+        } else systemCapture()
+    }
+
+    /** 폰 기본 카메라 앱으로 찍어서 바로 엽니다. 원본은 Pictures/FOFilter/원본 에 남습니다. */
+    private fun systemCapture() {
+        // 앱이 카메라 권한을 선언했으므로, 기본 카메라를 부를 때도 권한이 있어야 합니다
+        if (checkSelfPermission(android.Manifest.permission.CAMERA) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.CAMERA), REQ_PERM_SYSTEM)
+            return
+        }
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "FO_${System.currentTimeMillis()}.jpg")
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
@@ -809,9 +827,35 @@ class MainActivity : Activity() {
         pick(REQ_REF)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_PERM_SYSTEM) {
+            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) systemCapture()
+            else toast("카메라 권한이 있어야 촬영할 수 있어요")
+        }
+    }
+
+    /** 카메라 화면에서 바꾼 LUT·프레임·워터마크를 편집 화면에도 맞춥니다. */
+    private fun syncFromStore() {
+        val s = store.current ?: return
+        applyValues(s)
+        selected = entries.firstOrNull { it.key == s.lutKey } ?: selected
+        selected?.let { category = it.category }
+        setWatermark(store.watermark, persist = false)
+        rebuildAdjust(); rebuildFrames(); rebuildRecent(); rebuildCategories(); rebuildStrip(); rebuildTextPanel()
+        if (previewFull != null) applyFrame()
+    }
+
     @Deprecated("Activity API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_APP_CAMERA) {
+            syncFromStore()
+            if (data?.getBooleanExtra(CameraActivity.EXTRA_SYSTEM, false) == true) { systemCapture(); return }
+            // 앱 카메라는 이미 설정을 입혀 저장했으니, 원본을 불러와 더 손볼 수 있게만
+            data?.data?.let { autoSaveNext = false; load(it) }
+            return
+        }
         if (requestCode == REQ_CAMERA) {
             val uri = captureUri ?: return
             captureUri = null
@@ -1595,6 +1639,8 @@ class MainActivity : Activity() {
         private const val REQ_REF = 2
         private const val REQ_CUBE = 3
         private const val REQ_CAMERA = 4
+        private const val REQ_APP_CAMERA = 5
+        private const val REQ_PERM_SYSTEM = 6
         private const val KEY_CAPTURE = "capture"
         private const val KEY_AUTOSAVE = "autosave"
         private const val PREVIEW_MAX = 1400
