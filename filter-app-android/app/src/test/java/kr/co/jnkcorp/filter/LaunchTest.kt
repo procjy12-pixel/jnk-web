@@ -1,0 +1,64 @@
+package kr.co.jnkcorp.filter
+
+import android.content.Intent
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
+
+/** 앱이 켜지는지: 편집 화면과 카메라 화면을 실제로 만들어 봅니다. */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class LaunchTest {
+
+    @Test fun mainActivityStarts() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        ShadowLooper.idleMainLooper()
+        Thread.sleep(1500)
+        ShadowLooper.idleMainLooper()
+        ctl.pause().resume()
+        val next = shadowOf(ctl.get()).nextStartedActivity
+        println("next activity: ${next?.component}")
+    }
+
+    @Test fun returnFromCameraDoesNotCrash() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        for (i in 0 until 4) { ShadowLooper.idleMainLooper(); Thread.sleep(400) }
+        val a = ctl.get()
+        val started = shadowOf(a).nextStartedActivityForResult
+        requireNotNull(started) { "카메라가 열려야 함" }
+        shadowOf(a).receiveResult(started.intent, android.app.Activity.RESULT_OK, Intent())
+        ShadowLooper.idleMainLooper()
+        // 기본 카메라로 바꿔 달라는 결과도
+        shadowOf(a).receiveResult(started.intent, android.app.Activity.RESULT_OK, Intent().putExtra(CameraActivity.EXTRA_SYSTEM, true))
+        ShadowLooper.idleMainLooper()
+    }
+
+    @Test fun lastCrashSkipsAutoCamera() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        FoApp.crashFile(app).writeText("test crash")
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        ShadowLooper.idleMainLooper()
+        org.junit.Assert.assertNull("꺼진 직후엔 카메라를 자동으로 열지 않음", shadowOf(ctl.get()).nextStartedActivity)
+        org.junit.Assert.assertFalse(FoApp.crashFile(app).exists())
+    }
+
+    @Test fun cameraActivityStartsWithPermission() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(android.Manifest.permission.CAMERA)
+        val ctl = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
+        for (i in 0 until 5) { ShadowLooper.idleMainLooper(); Thread.sleep(400) }
+        ctl.pause().stop().destroy()
+    }
+
+    @Test fun cameraActivityStarts() {
+        val ctl = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
+        ShadowLooper.idleMainLooper()
+        Thread.sleep(1500)
+        ShadowLooper.idleMainLooper()
+        ctl.pause().stop().destroy()
+    }
+}

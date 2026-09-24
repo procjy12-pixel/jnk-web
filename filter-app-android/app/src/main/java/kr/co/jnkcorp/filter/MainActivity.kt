@@ -188,8 +188,39 @@ class MainActivity : Activity() {
             }
         }
 
+        // 지난번에 앱이 갑자기 꺼졌으면 오류 내용을 보여 주고, 이번엔 카메라를 자동으로 열지 않음
+        val crashed = showLastCrash()
         // 앱을 열자마자 카메라
-        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND) capture()
+        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND && !crashed) capture()
+    }
+
+    private fun showLastCrash(): Boolean {
+        val f = FoApp.crashFile(this)
+        if (!f.exists()) return false
+        val text = runCatching { f.readText() }.getOrDefault("")
+        f.delete()
+        val tv = TextView(this).apply {
+            this.text = text
+            textSize = 10f
+            setTextIsSelectable(true)
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+        }
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("지난번에 앱이 꺼졌어요")
+            .setMessage("아래 내용을 복사해서 보내 주시면 고칠 수 있어요. 이번엔 카메라를 자동으로 열지 않았어요.")
+            .setView(ScrollView(this).apply { addView(tv) })
+            .setPositiveButton("복사") { _, _ ->
+                val cm = getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 오류", text))
+                toast("복사했어요")
+            }
+            .setNegativeButton("닫기", null)
+            .setNeutralButton("기본 카메라로 바꾸기") { _, _ ->
+                store.useAppCamera = false; rebuildFrames()
+                toast("앞으로 폰 기본 카메라로 찍어요")
+            }
+            .show()
+        return true
     }
 
     override fun onPause() {

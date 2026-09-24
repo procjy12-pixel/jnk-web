@@ -169,13 +169,26 @@ class CameraActivity : ComponentActivity() {
     private fun startCamera() {
         val future = ProcessCameraProvider.getInstance(this)
         future.addListener({
-            provider = future.get()
-            bind()
+            try {
+                provider = future.get()
+                bind()
+            } catch (e: Throwable) {
+                cameraFailed(e)
+            }
         }, mainExecutor)
+    }
+
+    private fun cameraFailed(e: Throwable) {
+        status.text = "카메라를 열 수 없어요 · ‘기본 카메라’를 쓰세요"
+        toast("카메라를 열 수 없습니다: ${e.javaClass.simpleName} ${e.message ?: ""}")
     }
 
     private fun bind() {
         val p = provider ?: return
+        try { bindUnsafe(p) } catch (e: Throwable) { cameraFailed(e) }
+    }
+
+    private fun bindUnsafe(p: ProcessCameraProvider) {
         p.unbindAll()
         val ratio43 = AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY
         analysis = ImageAnalysis.Builder()
@@ -187,13 +200,19 @@ class CameraActivity : ComponentActivity() {
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .setTargetRotation(Surface.ROTATION_0)
             .build().also { a -> a.setAnalyzer(analysisExec) { proxy ->
-                val bmp = proxy.toBitmap()
-                val rot = proxy.imageInfo.rotationDegrees
-                proxy.close()
-                showFrame(bmp, rot)
+                try {
+                    val bmp = proxy.toBitmap()
+                    val rot = proxy.imageInfo.rotationDegrees
+                    proxy.close()
+                    showFrame(bmp, rot)
+                } catch (e: Throwable) {
+                    // 한 장이 실패해도 다음 장면은 계속
+                    try { proxy.close() } catch (_: Throwable) {}
+                }
             } }
         imageCapture = ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_ZERO_SHUTTER_LAG)   // 지원 안 하면 지연 최소화로 자동 전환
+            // ZSL 은 CameraX 에서 아직 실험 기능이고 일부 삼성 기기에서 문제가 있어 안정적인 지연 최소화 모드를 씀
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setResolutionSelector(ResolutionSelector.Builder().setAspectRatioStrategy(ratio43).build())
             .setFlashMode(flashMode)
             .setTargetRotation(lastRotation)
@@ -229,6 +248,10 @@ class CameraActivity : ComponentActivity() {
     }
 
     private fun shoot() {
+        try { shootUnsafe() } catch (e: Throwable) { toast("촬영 실패: ${e.message}") }
+    }
+
+    private fun shootUnsafe() {
         val ic = imageCapture ?: return
         flashCover.alpha = 0.85f
         flashCover.animate().alpha(0f).setDuration(180).start()
@@ -272,7 +295,7 @@ class CameraActivity : ComponentActivity() {
 
     private fun setupExposure() {
         val c = camera ?: return
-        val st = c.cameraInfo.exposureState
+        val st = try { c.cameraInfo.exposureState } catch (e: Throwable) { return }
         if (!st.isExposureCompensationSupported) { evSeek.isEnabled = false; evText.text = "-"; return }
         val range = st.exposureCompensationRange
         evSeek.max = range.upper - range.lower
@@ -301,8 +324,10 @@ class CameraActivity : ComponentActivity() {
             270 -> 1f - v to u
             else -> u to v
         }
-        val point = SurfaceOrientedMeteringPointFactory(1f, 1f, a).createPoint(bx, by)
-        c.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+        try {
+            val point = SurfaceOrientedMeteringPointFactory(1f, 1f, a).createPoint(bx, by)
+            c.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+        } catch (e: Throwable) { return }
         focusRing.x = x - focusRing.width / 2f; focusRing.y = y - focusRing.height / 2f
         focusRing.alpha = 1f; focusRing.scaleX = 1.3f; focusRing.scaleY = 1.3f
         focusRing.animate().scaleX(1f).scaleY(1f).setDuration(200).withEndAction {
@@ -323,6 +348,7 @@ class CameraActivity : ComponentActivity() {
     private fun rebuildGrade() {
         val s = cur
         val list = entries.toList()
+        if (gradeExec.isShutdown) return
         gradeExec.execute {
             val sel = list.firstOrNull { it.key == s.lutKey }?.lut
             val lut = if (sel == null && s.adjust == MakerParams()) null
@@ -379,7 +405,7 @@ class CameraActivity : ComponentActivity() {
             override fun onScale(d: ScaleGestureDetector): Boolean {
                 val c = camera ?: return false
                 val z = c.cameraInfo.zoomState.value ?: return false
-                c.cameraControl.setZoomRatio((z.zoomRatio * d.scaleFactor).coerceIn(z.minZoomRatio, z.maxZoomRatio))
+                runCatching { c.cameraControl.setZoomRatio((z.zoomRatio * d.scaleFactor).coerceIn(z.minZoomRatio, z.maxZoomRatio)) }
                 return true
             }
         })
@@ -484,7 +510,12 @@ class CameraActivity : ComponentActivity() {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#222222")) }
-            setOnClickListener { front = !front; bind() }
+            setOnClickListener {
+                front = !front
+                val has = runCatching { provider?.hasCamera(if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA) }.getOrNull()
+                if (has == false) { front = !front; toast("다른 쪽 카메라가 없어요"); return@setOnClickListener }
+                bind()
+            }
         }
         controls.addView(flip, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.END or Gravity.CENTER_VERTICAL))
         bottom.addView(controls)
