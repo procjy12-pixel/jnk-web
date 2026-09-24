@@ -58,6 +58,9 @@ object CrashReport {
             }
         }
         if (sb.isBlank()) return null
+        // 반복되는 오류 줄(무한 호출 등)은 접고 전체를 줄여서, 화면·복사가 가능한 크기로
+        val short = FoApp.shorten(sb.toString())
+        sb.setLength(0); sb.append(short)
         val step = p.getString("step", null)
         if (step != null) sb.append("\n마지막 단계: $step")
         sb.insert(0, "FOFilter ${runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull()} · " +

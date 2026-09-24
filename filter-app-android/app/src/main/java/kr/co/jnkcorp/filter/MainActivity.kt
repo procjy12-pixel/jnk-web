@@ -195,7 +195,7 @@ class MainActivity : Activity() {
         val lp = { LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(8) } }
         col.addView(btn("복사", true) {
             getSystemService(android.content.ClipboardManager::class.java)
-                .setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 오류", report))
+                .setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 오류", report.take(30_000)))
             Toast.makeText(this, "복사했어요", Toast.LENGTH_SHORT).show()
         }, lp())
         col.addView(btn("앱 계속 · 폰 기본 카메라로", false) {
@@ -1689,7 +1689,7 @@ class MainActivity : Activity() {
     private fun pct(v: Float) = "${(v * 100).roundToInt()}%"
     private fun signedPct(v: Float) = String.format("%+d", (v * 100).roundToInt())
     private fun ev(v: Float) = String.format("%+.1f", v)
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, msg.take(200), Toast.LENGTH_SHORT).show()
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     companion object {

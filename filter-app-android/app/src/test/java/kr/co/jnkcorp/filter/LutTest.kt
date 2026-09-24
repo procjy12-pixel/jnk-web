@@ -221,6 +221,16 @@ class LutTest {
         }
     }
 
+    @Test fun crashReportIsShortened() {
+        val huge = StringBuilder("java.lang.StackOverflowError\n")
+        repeat(50_000) { huge.append("\tat kr.co.jnkcorp.filter.Foo.bar(Foo.kt:1)\n") }
+        huge.append("Caused by: x ").append("y".repeat(3_000_000)).append('\n')
+        val s = FoApp.shorten(huge.toString())
+        assertTrue("짧아야 함: ${s.length}", s.length < 45_000)
+        assertTrue(s.contains("번 반복"))
+        assertTrue(s.contains("Caused by"))
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

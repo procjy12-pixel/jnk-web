@@ -24,6 +24,35 @@ class LaunchTest {
         println("next activity: ${next?.component}")
     }
 
+    private fun waitReady(a: MainActivity) {
+        val f = MainActivity::class.java.getDeclaredField("ready").apply { isAccessible = true }
+        for (i in 0 until 100) {
+            ShadowLooper.idleMainLooper()
+            if (f.getBoolean(a)) return
+            Thread.sleep(200)
+        }
+        error("LUT 목록을 20초 안에 다 읽지 못함")
+    }
+
+    @Test fun mainActivityFullyLoads() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        waitReady(ctl.get())
+        ShadowLooper.idleMainLooper()
+        ctl.pause().resume()
+    }
+
+    @Test fun cameraActivityFullyLoads() {
+        val ctl = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
+        val f = CameraActivity::class.java.getDeclaredField("entries").apply { isAccessible = true }
+        for (i in 0 until 100) {
+            ShadowLooper.idleMainLooper()
+            if ((f.get(ctl.get()) as List<*>).isNotEmpty()) break
+            Thread.sleep(200)
+        }
+        for (i in 0 until 5) { ShadowLooper.idleMainLooper(); Thread.sleep(200) }
+        ctl.pause().resume()
+    }
+
     @Test fun returnFromCameraDoesNotCrash() {
         val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
         for (i in 0 until 4) { ShadowLooper.idleMainLooper(); Thread.sleep(400) }

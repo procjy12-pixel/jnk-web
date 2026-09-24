@@ -173,6 +173,7 @@ class CameraActivity : ComponentActivity() {
         future.addListener({
             try {
                 provider = future.get()
+                CrashReport.step(this, "camera:provider-ready")
                 bind()
             } catch (e: Throwable) {
                 cameraFailed(e)
@@ -180,9 +181,15 @@ class CameraActivity : ComponentActivity() {
         }, mainExecutor)
     }
 
+    private var cameraError: String? = null
+
     private fun cameraFailed(e: Throwable) {
-        status.text = "카메라를 열 수 없어요 · ‘기본 카메라’를 쓰세요"
-        toast("카메라를 열 수 없습니다: ${e.javaClass.simpleName} ${e.message ?: ""}")
+        val sw = java.io.StringWriter(); e.printStackTrace(java.io.PrintWriter(sw))
+        cameraError = "FOFilter ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.SDK_INT}\n" +
+            FoApp.shorten(sw.toString(), 20_000)
+        CrashReport.step(this, "camera:failed ${e.javaClass.simpleName}")
+        status.text = "카메라를 열 수 없어요: ${e.javaClass.simpleName}\n이 글자를 길게 누르면 오류 내용 복사 · ‘기본 카메라’로 찍을 수 있어요"
+        toast("카메라를 열 수 없습니다: ${e.javaClass.simpleName}")
     }
 
     private fun bind() {
@@ -295,6 +302,7 @@ class CameraActivity : ComponentActivity() {
     }
 
     private fun updateStatus() {
+        if (cameraError != null) return
         status.text = if (pending > 0) "저장 중 $pending" else "${cur.lutName} · ${cur.frame.label}"
     }
 
@@ -463,6 +471,12 @@ class CameraActivity : ComponentActivity() {
         }
         status = TextView(this).apply {
             textSize = 12f; setTextColor(orange); gravity = Gravity.CENTER
+            setOnLongClickListener {
+                val err = cameraError ?: return@setOnLongClickListener false
+                getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("FOFilter 카메라 오류", err.take(20_000)))
+                toast("오류 내용을 복사했어요"); true
+            }
         }
         bottom.addView(status)
         val evRow = LinearLayout(this).apply {
@@ -545,7 +559,7 @@ class CameraActivity : ComponentActivity() {
         layoutParams = LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(6) }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, msg.take(200), Toast.LENGTH_SHORT).show()
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     companion object {
