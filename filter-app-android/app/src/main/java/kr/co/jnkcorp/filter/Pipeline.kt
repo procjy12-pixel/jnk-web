@@ -12,7 +12,14 @@ data class Grade(
     val intensity: Float,     // 0..1  LUT 를 얼마나 섞을지
     val grain: Float,         // 0..1
     val vignette: Float,      // 0..1
+    val layers: List<LayerRender> = emptyList(),
 )
+
+/**
+ * 처리할 픽셀 배열이 사진 전체의 어디인지 (마스크 좌표 맞추기용).
+ * 전체 크기 [fullW]×[fullH] 안에서 ([left], [top]) 부터.
+ */
+data class Region(val left: Int, val top: Int, val fullW: Int, val fullH: Int)
 
 /**
  * 픽셀 배열(ARGB)에 [Grade] 를 입힙니다. 안드로이드 클래스에 기대지 않아서
@@ -24,14 +31,16 @@ object Pipeline {
     private val pool = Executors.newFixedThreadPool(threads) { r -> Thread(r).apply { isDaemon = true } }
 
     /** [px] 를 제자리에서 바꿉니다. [grainScale] 은 미리보기 대비 해상도 배율 (그레인 굵기 보정). */
-    fun process(px: IntArray, w: Int, h: Int, g: Grade, grainScale: Float = 1f) {
+    fun process(px: IntArray, w: Int, h: Int, g: Grade, grainScale: Float = 1f, region: Region = Region(0, 0, w, h)) {
         val lut = g.lut
         val useLut = lut != null && g.intensity > 0f
-        if (!useLut && g.grain <= 0f && g.vignette <= 0f) return
+        val layers = g.layers
+        if (!useLut && g.grain <= 0f && g.vignette <= 0f && layers.isEmpty()) return
         val band = (h + threads - 1) / threads
         val jobs = (0 until threads).map { t ->
             Callable {
                 val out = FloatArray(3)
+                val lo = FloatArray(3)
                 val cx = w * 0.5f
                 val cy = h * 0.5f
                 val vAmt = g.vignette * 0.6f
@@ -39,6 +48,7 @@ object Pipeline {
                 val gAmt = g.grain * 0.1f * sqrt(max(1f, grainScale))
                 for (y in t * band until min(h, (t + 1) * band)) {
                     val ny = (y - cy) / cy
+                    val mv = (y + region.top + 0.5f) / region.fullH
                     var i = y * w
                     for (x in 0 until w) {
                         val c = px[i]
@@ -55,6 +65,16 @@ object Pipeline {
                             r = mix(br, out[0], g.intensity)
                             gg = mix(bg, out[1], g.intensity)
                             b = mix(bb, out[2], g.intensity)
+                        }
+                        // 마스크 레이어: 칠한 만큼만 그 레이어 보정을 섞음
+                        if (layers.isNotEmpty()) {
+                            val mu = (x + region.left + 0.5f) / region.fullW
+                            for (L in layers) {
+                                val m = L.mask.sample(mu, mv)
+                                if (m < 0.002f) continue
+                                L.lut.sample(clamp01(r), clamp01(gg), clamp01(b), lo)
+                                r = mix(r, lo[0], m); gg = mix(gg, lo[1], m); b = mix(b, lo[2], m)
+                            }
                         }
                         if (vAmt > 0f) {
                             val nx = (x - cx) / cx

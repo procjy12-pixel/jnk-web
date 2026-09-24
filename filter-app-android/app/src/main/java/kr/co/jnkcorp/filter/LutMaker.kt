@@ -25,6 +25,10 @@ data class MakerParams(
  */
 object LutMaker {
 
+    /** 색온도·틴트 슬라이더 ±100 이 채널을 얼마나 곱하는지 */
+    const val WB_TEMP = 0.25f
+    const val WB_TINT = 0.15f
+
     /**
      * [baseIntensity] 는 기준 LUT 를 얼마나 섞을지 (LUT 적용 탭의 강도).
      * 흑백 LUT 는 강도를 낮춰도 색이 돌아오지 않게 원본 흑백과 섞습니다.
@@ -55,9 +59,9 @@ object LutMaker {
                 b = toGamma(toLinear(b) * gain)
             }
             // 화이트밸런스
-            r *= 1f + 0.12f * p.temperature
-            b *= 1f - 0.12f * p.temperature
-            g *= 1f - 0.08f * p.tint
+            r *= 1f + WB_TEMP * p.temperature
+            b *= 1f - WB_TEMP * p.temperature
+            g *= 1f - WB_TINT * p.tint
             r = clamp01(r); g = clamp01(g); b = clamp01(b)
 
             // 대비

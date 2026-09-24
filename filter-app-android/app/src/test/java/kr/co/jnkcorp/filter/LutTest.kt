@@ -115,6 +115,92 @@ class LutTest {
         assertEquals(4000, orig[2]); assertEquals(3000, orig[3])
     }
 
+    @Test fun maskAddThenErase() {
+        val m = Mask(100, 100)
+        m.dab(0.5f, 0.5f, 0.1f, 0f, 1f, erase = false)
+        assertTrue("추가 브러시는 칠함", m.sample(0.5f, 0.5f) > 0.99f)
+        assertTrue("브러시 밖은 그대로", m.sample(0.1f, 0.1f) < 0.01f)
+        m.dab(0.5f, 0.5f, 0.05f, 0f, 1f, erase = true)
+        assertTrue("빼기 브러시는 지움", m.sample(0.5f, 0.5f) < 0.01f)
+        assertTrue("빼기 범위 밖은 남음", m.sample(0.58f, 0.5f) > 0.9f)
+        m.stroke(0.1f, 0.9f, 0.9f, 0.9f, 0.03f, 0.5f, 1f, erase = false)
+        assertTrue("선으로 칠하면 중간도 끊기지 않음", m.sample(0.5f, 0.9f) > 0.5f)
+    }
+
+    @Test fun layerAppliesOnlyWhereMasked() {
+        val w = 40; val h = 20
+        val px = IntArray(w * h) { 0xFF808080.toInt() }
+        val mask = Mask(w, h)
+        for (y in 0 until h) for (x in 0 until w / 2) mask.data[y * w + x] = 1f   // 왼쪽 절반만
+        val bright = LutMaker.build(null, null, MakerParams(exposure = 1f), size = 17)
+        Pipeline.process(px, w, h, Grade(null, 1f, 0f, 0f, listOf(LayerRender(bright, mask))))
+        assertTrue("칠한 왼쪽은 밝아짐", (px[5] and 0xFF) > 0xA0)
+        assertEquals("안 칠한 오른쪽은 그대로", 0x80, px[w - 5] and 0xFF)
+    }
+
+    @Test fun layerMaskFollowsCropRegion() {
+        // 전체 40x20 중 오른쪽 절반(20..39)만 잘라서 처리 → 마스크 왼쪽 절반은 안 걸려야 함
+        val mask = Mask(40, 20)
+        for (y in 0 until 20) for (x in 0 until 20) mask.data[y * 40 + x] = 1f
+        val px = IntArray(20 * 20) { 0xFF808080.toInt() }
+        val bright = LutMaker.build(null, null, MakerParams(exposure = 1f), size = 17)
+        Pipeline.process(px, 20, 20, Grade(null, 1f, 0f, 0f, listOf(LayerRender(bright, mask))), region = Region(20, 0, 40, 20))
+        assertEquals(0x80, px[10 * 20 + 10] and 0xFF)
+    }
+
+    private fun skinImage(w: Int, h: Int): IntArray {
+        val rnd = java.util.Random(1)
+        return IntArray(w * h) {
+            val n = rnd.nextInt(7) - 3
+            (0xFF shl 24) or ((215 + n) shl 16) or ((170 + n) shl 8) or (145 + n)
+        }
+    }
+
+    private fun darkDot(px: IntArray, w: Int, cx: Int, cy: Int, r: Int) {
+        for (y in cy - r..cy + r) for (x in cx - r..cx + r)
+            if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) px[y * w + x] = 0xFF7A4A3A.toInt()
+    }
+
+    @Test fun detectsAndHealsBlemish() {
+        val w = 800; val h = 600
+        val px = skinImage(w, h)
+        darkDot(px, w, 250, 300, 2)
+        darkDot(px, w, 550, 150, 4)
+        val spots = AutoFix.detectBlemishes(px, w, h, 0.5f)
+        assertEquals("점 두 개를 찾아야 함", 2, spots.size)
+        AutoFix.heal(px, w, h, spots)
+        for ((x, y) in listOf(250 to 300, 550 to 150)) {
+            val c = px[y * w + x]
+            assertTrue("지운 자리는 피부색이어야 함: ${Integer.toHexString(c)}", ((c shr 16) and 0xFF) > 200)
+        }
+    }
+
+    @Test fun manualHealRemovesDot() {
+        val w = 200; val h = 200
+        val px = skinImage(w, h)
+        darkDot(px, w, 100, 100, 5)
+        AutoFix.heal(px, w, h, listOf(Spot(0.5f, 0.5f, 8f / 200)))
+        val c = px[100 * w + 100]
+        assertTrue(((c shr 16) and 0xFF) > 200)
+    }
+
+    @Test fun noBlemishesOnProductPhotoColors() {
+        // 피부색이 아닌 곳(파란 옷 위의 어두운 점)은 건드리지 않음
+        val w = 200; val h = 200
+        val px = IntArray(w * h) { 0xFF2040A0.toInt() }
+        for (y in 98..102) for (x in 98..102) px[y * w + x] = 0xFF101830.toInt()
+        assertEquals(0, AutoFix.detectBlemishes(px, w, h, 1f).size)
+    }
+
+    @Test fun autoWhiteBalanceCorrectsBlueCast() {
+        val px = IntArray(1000) { 0xFF7080A0.toInt() }   // 파랗게 뜬 회색
+        val (t, n) = AutoFix.whiteBalance(px)
+        assertTrue("파란 기운이면 따뜻하게", t > 0.3f)
+        val lut = LutMaker.build(null, null, MakerParams(temperature = t, tint = n))
+        lut.sample(0x70 / 255f, 0x80 / 255f, 0xA0 / 255f, o)
+        assertTrue("맞춘 뒤엔 거의 회색: ${o.toList()}", abs(o[0] - o[2]) < 0.03f && abs(o[1] - (o[0] + o[2]) / 2) < 0.03f)
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

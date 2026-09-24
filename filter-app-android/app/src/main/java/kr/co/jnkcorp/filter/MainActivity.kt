@@ -42,6 +42,9 @@ import kotlin.math.roundToInt
 
 class MainActivity : Activity() {
 
+    /** 아래쪽 탭. 탭마다 사진 위 손가락 동작도 달라집니다. */
+    private enum class Mode { FILTER, MASK, HEAL, MAKER }
+
     private val bg = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private lateinit var library: LutLibrary
@@ -50,6 +53,7 @@ class MainActivity : Activity() {
     private var sourceUri: Uri? = null
     private var captureUri: Uri? = null
     private var previewFull: Bitmap? = null   // 자르기 전 미리보기
+    private var healedFull: Bitmap? = null    // 잡티를 지운 미리보기 (없으면 previewFull)
     private var preview: Bitmap? = null       // 프레임으로 자른 미리보기
     private var previewPx: IntArray? = null
     private var thumbPx: IntArray? = null
@@ -81,12 +85,28 @@ class MainActivity : Activity() {
     private var adjust = MakerParams()        // LUT 적용 탭의 노출·대비 등
 
     // LUT 만들기
-    private var makerMode = false
+    private var mode = Mode.FILTER
+    private val makerMode: Boolean get() = mode == Mode.MAKER
     private var makerParams = MakerParams()
     private var makerBase: LutEntry? = null
     private var transfer: ColorTransfer? = null
 
     private var renderGen = 0
+
+    // 잡티
+    private val spots = ArrayList<Spot>()
+    private var healSize = 0.015f
+    private var sensitivity = 0.5f
+
+    // 마스크 레이어
+    private val layers = ArrayList<Layer>()
+    private var activeLayer = -1
+    private var eraseBrush = false
+    private var brushSize = 0.05f
+    private var brushSoft = 0.6f
+    private var brushFlow = 0.5f
+    private var showMask = true
+    private var maskUndo: Pair<Layer, Mask>? = null
 
     // 확대
     private var zoom = 1f
@@ -96,6 +116,14 @@ class MainActivity : Activity() {
 
     // 뷰
     private lateinit var image: ImageView
+    private lateinit var overlay: ImageView     // 마스크를 빨갛게 겹쳐 보여 줌
+    private lateinit var canvasBox: FrameLayout // image + overlay, 확대는 이걸 통째로
+    private lateinit var maskScroll: ScrollView
+    private lateinit var maskPanel: LinearLayout
+    private lateinit var healScroll: ScrollView
+    private lateinit var healPanel: LinearLayout
+    private lateinit var tabMask: TextView
+    private lateinit var tabHeal: TextView
     private lateinit var hint: TextView
     private lateinit var frameRow: LinearLayout
     private lateinit var categoryRow: LinearLayout
@@ -233,7 +261,11 @@ class MainActivity : Activity() {
 
         // 미리보기: 한 손가락으로 누르고 있으면 원본, 두 손가락으로 벌리면 확대 (놓으면 원래 크기)
         val stage = FrameLayout(this).apply { clipChildren = true }
+        canvasBox = FrameLayout(this)
         image = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER }
+        overlay = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; visibility = View.GONE }
+        canvasBox.addView(image, -1, -1)
+        canvasBox.addView(overlay, -1, -1)
         hint = TextView(this).apply {
             text = "‘촬영’ 또는 ‘열기’로 사진을 고르세요\n\n누르고 있으면 원본 · 두 손가락으로 확대"
             setTextColor(dim)
@@ -241,7 +273,7 @@ class MainActivity : Activity() {
             textSize = 14f
             setOnClickListener { pick(REQ_PICK) }
         }
-        stage.addView(image, -1, -1)
+        stage.addView(canvasBox, -1, -1)
         stage.addView(hint, -1, -1)
         val scaler = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScaleBegin(d: ScaleGestureDetector): Boolean {
@@ -249,16 +281,17 @@ class MainActivity : Activity() {
                 zooming = true
                 main.removeCallbacks(showOriginal)
                 showFiltered()
-                image.animate().cancel()
-                image.pivotX = d.focusX; image.pivotY = d.focusY
+                cancelStroke()
+                canvasBox.animate().cancel()
+                canvasBox.pivotX = d.focusX; canvasBox.pivotY = d.focusY
                 focusStartX = d.focusX; focusStartY = d.focusY
                 return true
             }
             override fun onScale(d: ScaleGestureDetector): Boolean {
                 zoom = (zoom * d.scaleFactor).coerceIn(1f, 6f)
-                image.scaleX = zoom; image.scaleY = zoom
-                image.translationX = d.focusX - focusStartX
-                image.translationY = d.focusY - focusStartY
+                canvasBox.scaleX = zoom; canvasBox.scaleY = zoom
+                canvasBox.translationX = d.focusX - focusStartX
+                canvasBox.translationY = d.focusY - focusStartY
                 return true
             }
         })
@@ -268,6 +301,27 @@ class MainActivity : Activity() {
         var dragging = false
         stage.setOnTouchListener { _, e ->
             scaler.onTouchEvent(e)
+            val painting = mode == Mode.MASK && layers.getOrNull(activeLayer) != null && preview != null
+            val healing = mode == Mode.HEAL && preview != null
+            if (painting || healing) {
+                when (e.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downX = e.x; downY = e.y; lastX = e.x; lastY = e.y; dragging = false
+                        if (painting) beginStroke(e.x, e.y)
+                    }
+                    MotionEvent.ACTION_MOVE -> if (e.pointerCount == 1 && !zooming) {
+                        if (hypot(e.x - downX, e.y - downY) > slop) dragging = true
+                        if (painting && strokeLayer != null) { continueStroke(lastX, lastY, e.x, e.y); lastX = e.x; lastY = e.y }
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (painting) endStroke()
+                        if (healing && !dragging && !zooming) addSpot(e.x, e.y)
+                        springBack()
+                    }
+                    MotionEvent.ACTION_CANCEL -> { cancelStroke(); springBack() }
+                }
+                return@setOnTouchListener true
+            }
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.x; downY = e.y; lastX = e.x; lastY = e.y; dragging = false
@@ -307,10 +361,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(12), dp(6), dp(12), 0)
         }
-        tabFilter = tab("LUT 적용") { setMode(false) }
-        tabMaker = tab("LUT 만들기") { setMode(true) }
-        tabs.addView(tabFilter, LinearLayout.LayoutParams(0, -2, 1f))
-        tabs.addView(tabMaker, LinearLayout.LayoutParams(0, -2, 1f))
+        tabFilter = tab("LUT") { setMode(Mode.FILTER) }
+        tabMask = tab("마스크") { setMode(Mode.MASK) }
+        tabHeal = tab("잡티") { setMode(Mode.HEAL) }
+        tabMaker = tab("LUT 만들기") { setMode(Mode.MAKER) }
+        for (t in listOf(tabFilter, tabMask, tabHeal, tabMaker)) tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(tabs)
 
         val bottom = FrameLayout(this)
@@ -358,9 +413,21 @@ class MainActivity : Activity() {
         makerScroll.addView(makerPanel)
         bottom.addView(makerScroll, -1, -1)
 
+        // 마스크 · 잡티 패널
+        maskScroll = ScrollView(this).apply { visibility = View.GONE }
+        maskPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        maskScroll.addView(maskPanel)
+        bottom.addView(maskScroll, -1, -1)
+        healScroll = ScrollView(this).apply { visibility = View.GONE }
+        healPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        healScroll.addView(healPanel)
+        bottom.addView(healScroll, -1, -1)
+        rebuildMaskPanel()
+        rebuildHealPanel()
+
         root.addView(bottom, LinearLayout.LayoutParams(-1, dp(360)))
 
-        setMode(false)
+        setMode(Mode.FILTER)
         return root
     }
 
@@ -369,17 +436,23 @@ class MainActivity : Activity() {
     private fun springBack() {
         zooming = false
         zoom = 1f
-        image.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f)
+        canvasBox.animate().scaleX(1f).scaleY(1f).translationX(0f).translationY(0f)
             .setDuration(220).setInterpolator(DecelerateInterpolator()).start()
     }
 
-    private fun setMode(maker: Boolean) {
-        makerMode = maker
-        filterPanel.visibility = if (maker) View.GONE else View.VISIBLE
-        makerScroll.visibility = if (maker) View.VISIBLE else View.GONE
-        styleTab(tabFilter, !maker)
-        styleTab(tabMaker, maker)
-        render()
+    private fun setMode(m: Mode) {
+        val wasMaker = makerMode
+        mode = m
+        filterPanel.visibility = if (m == Mode.FILTER) View.VISIBLE else View.GONE
+        maskScroll.visibility = if (m == Mode.MASK) View.VISIBLE else View.GONE
+        healScroll.visibility = if (m == Mode.HEAL) View.VISIBLE else View.GONE
+        makerScroll.visibility = if (m == Mode.MAKER) View.VISIBLE else View.GONE
+        styleTab(tabFilter, m == Mode.FILTER)
+        styleTab(tabMask, m == Mode.MASK)
+        styleTab(tabHeal, m == Mode.HEAL)
+        styleTab(tabMaker, m == Mode.MAKER)
+        updateOverlay()
+        if (wasMaker != makerMode || lastRender == null) render()
     }
 
     private fun rebuildFrames() {
@@ -402,7 +475,7 @@ class MainActivity : Activity() {
 
     /** 잘린 영역을 손가락 움직임만큼 옮깁니다. 끄는 동안은 필터 없이 빠르게 보여 줍니다. */
     private fun panCrop(dx: Float, dy: Float) {
-        val full = previewFull ?: return
+        val full = baseFull() ?: return
         val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
         val scale = min(image.width.toFloat() / b[2], image.height.toFloat() / b[3])
         val freeX = full.width - b[2]
@@ -444,6 +517,10 @@ class MainActivity : Activity() {
         slider(adjustPanel, "그림자", -1f, 1f, a.shadows, ::signedPct) { a.shadows = it; render() }
         slider(adjustPanel, "채도", -1f, 1f, a.saturation, ::signedPct) { a.saturation = it; render() }
         slider(adjustPanel, "색온도", -1f, 1f, a.temperature, ::signedPct) { a.temperature = it; render() }
+        slider(adjustPanel, "틴트", -1f, 1f, a.tint, ::signedPct) { a.tint = it; render() }
+        val wb = hRow()
+        wb.addView(smallChip("색온도 자동", false) { autoWhiteBalance(adjust, selected?.lut, intensity) { rebuildAdjust() } })
+        adjustPanel.addView(wb)
         adjustPanel.addView(section("필름 효과"))
         slider(adjustPanel, "그레인", 0f, 1f, grain, ::pct) { grain = it; render() }
         slider(adjustPanel, "비네팅", 0f, 1f, vignette, ::pct) { vignette = it; render() }
@@ -529,7 +606,7 @@ class MainActivity : Activity() {
                         val msg = try { "${library.export(e)} 에 저장했습니다" } catch (x: Exception) { "내보내지 못했습니다: ${x.message}" }
                         main.post { toast(msg) }
                     }
-                    1 -> { makerBase = e; makerParams = MakerParams(); rebuildMaker(); setMode(true) }
+                    1 -> { makerBase = e; makerParams = MakerParams(); rebuildMaker(); setMode(Mode.MAKER) }
                     2 -> confirmDelete(e)
                 }
             }.show()
@@ -587,6 +664,9 @@ class MainActivity : Activity() {
         slider(makerPanel, "채도", -1f, 1f, p.saturation, ::signedPct) { p.saturation = it; render() }
         slider(makerPanel, "색온도", -1f, 1f, p.temperature, ::signedPct) { p.temperature = it; render() }
         slider(makerPanel, "틴트", -1f, 1f, p.tint, ::signedPct) { p.tint = it; render() }
+        val wb = hRow()
+        wb.addView(smallChip("색온도 자동", false) { autoWhiteBalance(makerParams, makerBase?.lut, 1f) { rebuildMaker() } })
+        makerPanel.addView(wb)
         slider(makerPanel, "페이드", 0f, 1f, p.fade, ::pct) { p.fade = it; render() }
 
         makerPanel.addView(section("스플릿 토닝"))
@@ -634,7 +714,7 @@ class MainActivity : Activity() {
                         category = Presets.MINE
                         intensity = 1f
                         if (fromAdjust) adjust = MakerParams()
-                        rebuildCategories(); rebuildStrip(); rebuildAdjust(); rebuildMaker(); setMode(false)
+                        rebuildCategories(); rebuildStrip(); rebuildAdjust(); rebuildMaker(); setMode(Mode.FILTER)
                         toast("‘$name’ 저장됨 · 길게 누르면 .cube 로 내보낼 수 있어요")
                     }
                 }
@@ -719,6 +799,9 @@ class MainActivity : Activity() {
             main.post {
                 if (bmp == null) { hint.text = "사진을 열 수 없습니다"; return@post }
                 previewFull = bmp
+                healedFull = null
+                spots.clear(); layers.clear(); activeLayer = -1; maskUndo = null
+                rebuildMaskPanel(); rebuildHealPanel()
                 transfer = null
                 hint.visibility = View.GONE
                 rebuildMaker()
@@ -730,7 +813,7 @@ class MainActivity : Activity() {
 
     /** 지금 프레임 비율로 미리보기를 다시 자릅니다. */
     private fun applyFrame() {
-        val full = previewFull ?: return
+        val full = baseFull() ?: return
         val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
         val bmp = if (b[2] == full.width && b[3] == full.height) full
         else Bitmap.createBitmap(full, b[0], b[1], b[2], b[3])
@@ -740,6 +823,7 @@ class MainActivity : Activity() {
         thumbW = t.width; thumbH = t.height; thumbPx = pixels(t)
         lastRender = null
         image.setImageBitmap(bmp)
+        updateOverlay()
         renderThumbs()
         render()
     }
@@ -793,15 +877,29 @@ class MainActivity : Activity() {
 
     /** 지금 설정을 [Grade] 로. 보정·강도는 LUT 한 장에 같이 구워서 한 번에 입힙니다. */
     private fun currentGrade(): Grade {
+        val lr = layerRenders()
         if (makerMode) {
-            return Grade(LutMaker.build(makerBase?.lut, transfer, makerParams.copy()), 1f, grain, vignette)
+            return Grade(LutMaker.build(makerBase?.lut, transfer, makerParams.copy()), 1f, grain, vignette, lr)
         }
         val sel = selected?.lut
         val a = adjust.copy()
         val lut = if (sel == null && a == MakerParams()) null
         else LutMaker.build(sel, null, a, baseIntensity = intensity)
-        return Grade(lut, 1f, grain, vignette)
+        return Grade(lut, 1f, grain, vignette, lr)
     }
+
+    /** 칠한 레이어만, 마스크는 복사해서 (칠하는 중에도 안전하게) */
+    private fun layerRenders(): List<LayerRender> = layers.filter { !it.mask.isEmpty() && it.params != MakerParams() }
+        .map { LayerRender(LutMaker.build(null, null, it.params.copy(), size = 17), it.mask.copy()) }
+
+    /** 미리보기가 사진 전체의 어디를 잘라 낸 것인지 */
+    private fun previewRegion(): Region {
+        val full = baseFull() ?: return Region(0, 0, 1, 1)
+        val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        return Region(b[0], b[1], full.width, full.height)
+    }
+
+    private fun baseFull(): Bitmap? = healedFull ?: previewFull
 
     /** 미리보기를 다시 그립니다. 연달아 불리면 마지막 것만 그립니다. */
     private fun render() {
@@ -815,6 +913,8 @@ class MainActivity : Activity() {
         val sel = selected?.lut
         val a = adjust.copy()
         val k = intensity; val gr = grain; val vg = vignette
+        val lr = layerRenders()
+        val region = previewRegion()
         bg.execute {
             if (gen != renderGen) return@execute
             val lut = when {
@@ -823,7 +923,7 @@ class MainActivity : Activity() {
                 else -> LutMaker.build(sel, null, a, baseIntensity = k)
             }
             val copy = px.copyOf()
-            Pipeline.process(copy, src.width, src.height, Grade(lut, 1f, gr, vg))
+            Pipeline.process(copy, src.width, src.height, Grade(lut, 1f, gr, vg, lr), region = region)
             val out = Bitmap.createBitmap(copy, src.width, src.height, Bitmap.Config.ARGB_8888)
             main.post {
                 if (gen != renderGen) return@post
@@ -839,19 +939,30 @@ class MainActivity : Activity() {
         val grade = currentGrade()
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
         val f = frame; val flip = frameFlip; val cx = cropX; val cy = cropY
+        val healList = spots.toList()
         if (!makerMode) { store.pushRecent(currentSettings()); rebuildRecent() }
         store.current = currentSettings()
         toast("원본 해상도로 저장하는 중…")
         bg.execute {
             val ok = try {
                 val full = decode(uri, FULL_MAX)
-                val b = cropBox(full.width, full.height, f, flip, cx, cy)
+                val fw = full.width; val fh = full.height
+                val b = cropBox(fw, fh, f, flip, cx, cy)
                 val w = b[2]; val h = b[3]
                 val px = IntArray(w * h)
-                full.getPixels(px, 0, w, b[0], b[1], w, h)
-                full.recycle()
+                if (healList.isEmpty()) {
+                    full.getPixels(px, 0, w, b[0], b[1], w, h)
+                    full.recycle()
+                } else {
+                    // 잡티는 자르기 전 전체에서 지워야 가장자리 잡티도 자연스럽게 메워짐
+                    val all = IntArray(fw * fh)
+                    full.getPixels(all, 0, fw, 0, 0, fw, fh)
+                    full.recycle()
+                    AutoFix.heal(all, fw, fh, healList)
+                    for (y in 0 until h) System.arraycopy(all, (y + b[1]) * fw + b[0], px, y * w, w)
+                }
                 val scale = max(w, h).toFloat() / max(prev.width, prev.height)
-                Pipeline.process(px, w, h, grade, scale)
+                Pipeline.process(px, w, h, grade, scale, Region(b[0], b[1], fw, fh))
                 val out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
                 writeToGallery(out, name) != null
             } catch (e: Throwable) {
@@ -895,6 +1006,232 @@ class MainActivity : Activity() {
     private fun pixels(b: Bitmap): IntArray {
         val sw = if (b.config == Bitmap.Config.ARGB_8888) b else b.copy(Bitmap.Config.ARGB_8888, false)
         return IntArray(sw.width * sw.height).also { sw.getPixels(it, 0, sw.width, 0, 0, sw.width, sw.height) }
+    }
+
+    // ───────────────────────── 마스크 · 잡티 ─────────────────────────
+
+    private var strokeLayer: Layer? = null
+    private var strokeBefore: Mask? = null
+    private var lastU = 0f
+    private var lastV = 0f
+
+    /** 화면 좌표 → 자르기 전 사진 전체 기준 0..1 좌표 */
+    private fun toFull(x: Float, y: Float): FloatArray? {
+        val p = preview ?: return null
+        val full = baseFull() ?: return null
+        val s = min(image.width.toFloat() / p.width, image.height.toFloat() / p.height)
+        val ox = (image.width - p.width * s) / 2f
+        val oy = (image.height - p.height * s) / 2f
+        val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        return floatArrayOf((b[0] + (x - ox) / s) / full.width, (b[1] + (y - oy) / s) / full.height)
+    }
+
+    private fun beginStroke(x: Float, y: Float) {
+        val layer = layers.getOrNull(activeLayer) ?: return
+        val uv = toFull(x, y) ?: return
+        strokeLayer = layer
+        strokeBefore = layer.mask.copy()
+        lastU = uv[0]; lastV = uv[1]
+        layer.mask.dab(uv[0], uv[1], brushSize, brushSoft, brushFlow, eraseBrush)
+        updateOverlay(force = true)
+    }
+
+    private fun continueStroke(x0: Float, y0: Float, x1: Float, y1: Float) {
+        val layer = strokeLayer ?: return
+        val uv = toFull(x1, y1) ?: return
+        layer.mask.stroke(lastU, lastV, uv[0], uv[1], brushSize, brushSoft, brushFlow, eraseBrush)
+        lastU = uv[0]; lastV = uv[1]
+        updateOverlay(force = true)
+    }
+
+    private fun endStroke() {
+        val layer = strokeLayer ?: return
+        strokeBefore?.let { maskUndo = layer to it }
+        strokeLayer = null; strokeBefore = null
+        updateOverlay()
+        render()
+    }
+
+    /** 두 손가락 확대가 시작되면 방금 칠한 건 없던 걸로 */
+    private fun cancelStroke() {
+        val layer = strokeLayer ?: return
+        strokeBefore?.let { System.arraycopy(it.data, 0, layer.mask.data, 0, it.data.size) }
+        strokeLayer = null; strokeBefore = null
+        updateOverlay()
+    }
+
+    /** 지금 레이어 마스크를 빨갛게 겹쳐 보여 줍니다. [force] 면 '마스크 보기' 가 꺼져 있어도 (칠하는 중) */
+    private fun updateOverlay(force: Boolean = false) {
+        val layer = layers.getOrNull(activeLayer)
+        val full = baseFull()
+        if (mode != Mode.MASK || layer == null || full == null || !(showMask || force)) {
+            overlay.visibility = View.GONE; return
+        }
+        val m = layer.mask
+        val b = cropBox(full.width, full.height, frame, frameFlip, cropX, cropY)
+        val mx0 = (b[0].toFloat() / full.width * m.w).toInt().coerceIn(0, m.w - 1)
+        val my0 = (b[1].toFloat() / full.height * m.h).toInt().coerceIn(0, m.h - 1)
+        val ow = (b[2].toFloat() / full.width * m.w).roundToInt().coerceIn(1, m.w - mx0)
+        val oh = (b[3].toFloat() / full.height * m.h).roundToInt().coerceIn(1, m.h - my0)
+        val arr = IntArray(ow * oh)
+        for (y in 0 until oh) {
+            val row = (my0 + y) * m.w + mx0
+            for (x in 0 until ow) {
+                val a = (m.data[row + x] * 150f).toInt()
+                arr[y * ow + x] = (a shl 24) or 0xFF3B30
+            }
+        }
+        overlay.setImageBitmap(Bitmap.createBitmap(arr, ow, oh, Bitmap.Config.ARGB_8888))
+        overlay.visibility = View.VISIBLE
+    }
+
+    private fun addLayer() {
+        val full = previewFull ?: run { toast("먼저 사진을 여세요"); return }
+        layers += Layer("레이어 ${layers.size + 1}", Mask.forImage(full.width, full.height))
+        activeLayer = layers.size - 1
+        eraseBrush = false
+        rebuildMaskPanel(); updateOverlay()
+        toast("사진 위를 칠하세요 · ‘빼기’로 지울 수 있어요")
+    }
+
+    private fun rebuildMaskPanel() {
+        maskPanel.removeAllViews()
+        maskPanel.addView(section("레이어"))
+        val row = hRow()
+        layers.forEachIndexed { i, l ->
+            row.addView(smallChip(l.name, i == activeLayer) { activeLayer = i; rebuildMaskPanel(); updateOverlay() })
+        }
+        row.addView(smallChip("+ 새 레이어", false) { addLayer() })
+        maskPanel.addView(scrollRow(row))
+        val layer = layers.getOrNull(activeLayer)
+        if (layer == null) {
+            maskPanel.addView(label("‘+ 새 레이어’를 누르고 사진 위를 브러시로 칠하면\n칠한 곳에만 보정이 들어갑니다", 12f, dim).apply {
+                setPadding(dp(16), dp(20), dp(16), dp(8))
+            })
+            return
+        }
+
+        maskPanel.addView(section("브러시"))
+        val modes = hRow()
+        modes.addView(bigChip("＋ 추가", !eraseBrush) { eraseBrush = false; rebuildMaskPanel() })
+        modes.addView(bigChip("－ 빼기", eraseBrush) { eraseBrush = true; rebuildMaskPanel() })
+        modes.addView(smallChip("되돌리기", false) {
+            val u = maskUndo ?: return@smallChip
+            System.arraycopy(u.second.data, 0, u.first.mask.data, 0, u.second.data.size)
+            maskUndo = null; updateOverlay(); render()
+        })
+        maskPanel.addView(scrollRow(modes))
+        val tools = hRow()
+        tools.addView(smallChip("마스크 보기", showMask) { showMask = !showMask; rebuildMaskPanel(); updateOverlay() })
+        tools.addView(smallChip("반전", false) { maskUndo = layer to layer.mask.copy(); layer.mask.invert(); updateOverlay(); render() })
+        tools.addView(smallChip("전체 칠하기", false) { maskUndo = layer to layer.mask.copy(); layer.mask.fill(1f); updateOverlay(); render() })
+        tools.addView(smallChip("비우기", false) { maskUndo = layer to layer.mask.copy(); layer.mask.fill(0f); updateOverlay(); render() })
+        tools.addView(smallChip("레이어 삭제", false) {
+            layers.remove(layer); activeLayer = layers.size - 1; maskUndo = null
+            rebuildMaskPanel(); updateOverlay(); render()
+        })
+        maskPanel.addView(scrollRow(tools))
+        slider(maskPanel, "크기", 0.01f, 0.2f, brushSize, { "${(it * 100).roundToInt()}" }, def = 0.05f) { brushSize = it }
+        slider(maskPanel, "부드러움", 0f, 1f, brushSoft, ::pct, def = 0.6f) { brushSoft = it }
+        slider(maskPanel, "농도", 0.05f, 1f, brushFlow, ::pct, def = 0.5f) { brushFlow = it }
+
+        maskPanel.addView(section("칠한 곳 보정 · ${layer.name}"))
+        val p = layer.params
+        slider(maskPanel, "노출", -2f, 2f, p.exposure, ::ev) { p.exposure = it; render() }
+        slider(maskPanel, "대비", -1f, 1f, p.contrast, ::signedPct) { p.contrast = it; render() }
+        slider(maskPanel, "하이라이트", -1f, 1f, p.highlights, ::signedPct) { p.highlights = it; render() }
+        slider(maskPanel, "그림자", -1f, 1f, p.shadows, ::signedPct) { p.shadows = it; render() }
+        slider(maskPanel, "채도", -1f, 1f, p.saturation, ::signedPct) { p.saturation = it; render() }
+        slider(maskPanel, "색온도", -1f, 1f, p.temperature, ::signedPct) { p.temperature = it; render() }
+        slider(maskPanel, "틴트", -1f, 1f, p.tint, ::signedPct) { p.tint = it; render() }
+    }
+
+    private fun addSpot(x: Float, y: Float) {
+        val uv = toFull(x, y) ?: return
+        if (uv[0] !in 0f..1f || uv[1] !in 0f..1f) return
+        spots += Spot(uv[0], uv[1], healSize)
+        rebuildHeal()
+    }
+
+    private fun autoHeal() {
+        val full = previewFull ?: run { toast("먼저 사진을 여세요"); return }
+        val sens = sensitivity
+        toast("잡티를 찾는 중…")
+        bg.execute {
+            val px = pixels(full)
+            val found = AutoFix.detectBlemishes(px, full.width, full.height, sens)
+            main.post {
+                spots.removeAll { it.auto }
+                spots.addAll(found)
+                rebuildHeal()
+                toast(if (found.isEmpty()) "지울 잡티를 못 찾았어요 · 민감도를 올려 보세요" else "잡티 ${found.size}개를 지웠어요")
+            }
+        }
+    }
+
+    /** 잡티 목록이 바뀌면 미리보기 원본을 다시 만듭니다. */
+    private fun rebuildHeal() {
+        rebuildHealPanel()
+        val full = previewFull ?: return
+        val list = spots.toList()
+        if (list.isEmpty()) { healedFull = null; applyFrame(); return }
+        bg.execute {
+            val px = pixels(full)
+            AutoFix.heal(px, full.width, full.height, list)
+            val out = Bitmap.createBitmap(px, full.width, full.height, Bitmap.Config.ARGB_8888)
+            main.post { if (list.size == spots.size) { healedFull = out; applyFrame() } }
+        }
+    }
+
+    private fun rebuildHealPanel() {
+        healPanel.removeAllViews()
+        healPanel.addView(section("자동"))
+        val auto = hRow()
+        auto.addView(pill("잡티 자동 제거", filled = true) { autoHeal() })
+        healPanel.addView(scrollRow(auto))
+        slider(healPanel, "민감도", 0f, 1f, sensitivity, ::pct, def = 0.5f) { sensitivity = it }
+        healPanel.addView(section("수동"))
+        healPanel.addView(label("사진에서 지울 곳을 톡 누르세요", 12f, dim).apply {
+            gravity = Gravity.START; setPadding(dp(16), dp(4), dp(16), dp(4))
+        })
+        slider(healPanel, "크기", 0.005f, 0.06f, healSize, { String.format("%.1f", it * 100) }, def = 0.015f) { healSize = it }
+        val acts = hRow()
+        acts.addView(smallChip("되돌리기", false) { if (spots.isNotEmpty()) { spots.removeAt(spots.size - 1); rebuildHeal() } })
+        acts.addView(smallChip("모두 지우기", false) { spots.clear(); rebuildHeal() })
+        acts.addView(label("지운 잡티 ${spots.size}개", 12f, soft).apply { setPadding(dp(8), 0, 0, 0) })
+        healPanel.addView(scrollRow(acts))
+    }
+
+    /** 색온도·틴트 자동: 지금 LUT 를 입힌 결과에서 색 치우침을 재서 맞춥니다. */
+    private fun autoWhiteBalance(target: MakerParams, base: Lut3D?, baseIntensity: Float, after: () -> Unit) {
+        val px = thumbPx ?: run { toast("먼저 사진을 여세요"); return }
+        val w = thumbW; val h = thumbH
+        val tr = if (makerMode) transfer else null
+        bg.execute {
+            val copy = px.copyOf()
+            if (base != null || tr != null) {
+                Pipeline.process(copy, w, h, Grade(LutMaker.build(base, tr, MakerParams(), baseIntensity = baseIntensity), 1f, 0f, 0f))
+            }
+            val (t, n) = AutoFix.whiteBalance(copy)
+            main.post {
+                target.temperature = t; target.tint = n
+                after(); render()
+                toast("색온도 ${signedPct(t)} · 틴트 ${signedPct(n)} 로 맞췄어요")
+            }
+        }
+    }
+
+    private fun hRow() = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dp(12), dp(6), dp(12), dp(4))
+    }
+
+    private fun scrollRow(v: View) = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(v) }
+
+    private fun bigChip(t: String, on: Boolean, onClick: () -> Unit) = smallChip(t, on, onClick).apply {
+        textSize = 15f
+        setPadding(dp(20), dp(9), dp(20), dp(9))
     }
 
     // ───────────────────────── 작은 부품 ─────────────────────────
