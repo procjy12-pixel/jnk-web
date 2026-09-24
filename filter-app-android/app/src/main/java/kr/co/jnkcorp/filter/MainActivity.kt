@@ -7,6 +7,7 @@ import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Typeface
@@ -19,6 +20,7 @@ import android.os.Looper
 import android.provider.MediaStore
 import android.text.InputType
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.ViewConfiguration
@@ -35,6 +37,8 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
@@ -43,7 +47,7 @@ import kotlin.math.roundToInt
 class MainActivity : Activity() {
 
     /** 아래쪽 탭. 탭마다 사진 위 손가락 동작도 달라집니다. */
-    private enum class Mode { FILTER, MASK, HEAL, MAKER }
+    private enum class Mode { FILTER, MASK, HEAL, TEXT, MAKER }
 
     private val bg = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -123,6 +127,12 @@ class MainActivity : Activity() {
     private lateinit var healScroll: ScrollView
     private lateinit var healPanel: LinearLayout
     private lateinit var tabMask: TextView
+    private lateinit var tabText: TextView
+    private lateinit var textScroll: ScrollView
+    private lateinit var textPanel: LinearLayout
+    private lateinit var wmView: WatermarkView
+    private lateinit var autoBtn: TextView
+    private var watermark = Watermark()
     private lateinit var tabHeal: TextView
     private lateinit var hint: TextView
     private lateinit var frameRow: LinearLayout
@@ -148,6 +158,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         library = LutLibrary(this)
         store = SettingsStore(this)
+        watermark = store.watermark
         captureUri = savedInstanceState?.getString(KEY_CAPTURE)?.let(Uri::parse)
         autoSaveNext = savedInstanceState?.getBoolean(KEY_AUTOSAVE) ?: false
         // 지난번에 쓰던 설정 그대로 (LUT 는 목록을 읽은 뒤에 고름)
@@ -266,6 +277,11 @@ class MainActivity : Activity() {
         overlay = ImageView(this).apply { scaleType = ImageView.ScaleType.FIT_CENTER; visibility = View.GONE }
         canvasBox.addView(image, -1, -1)
         canvasBox.addView(overlay, -1, -1)
+        wmView = WatermarkView(this).apply {
+            watermark = this@MainActivity.watermark
+            photoRect = { photoRect() }
+        }
+        canvasBox.addView(wmView, -1, -1)
         hint = TextView(this).apply {
             text = "‘촬영’ 또는 ‘열기’로 사진을 고르세요\n\n누르고 있으면 원본 · 두 손가락으로 확대"
             setTextColor(dim)
@@ -275,6 +291,19 @@ class MainActivity : Activity() {
         }
         stage.addView(canvasBox, -1, -1)
         stage.addView(hint, -1, -1)
+        // 우상단 자동 노출
+        autoBtn = TextView(this).apply {
+            text = "☀ 자동 노출"
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0x99000000.toInt()) }
+            visibility = View.GONE
+            setOnClickListener { applyAutoExposure() }
+        }
+        stage.addView(autoBtn, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
+            topMargin = dp(10); rightMargin = dp(10)
+        })
         val scaler = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScaleBegin(d: ScaleGestureDetector): Boolean {
                 if (preview == null) return false
@@ -300,6 +329,7 @@ class MainActivity : Activity() {
         var downX = 0f; var downY = 0f; var lastX = 0f; var lastY = 0f
         var dragging = false
         stage.setOnTouchListener { _, e ->
+            if (mode == Mode.TEXT && preview != null) { watermarkTouch(e); return@setOnTouchListener true }
             scaler.onTouchEvent(e)
             val painting = mode == Mode.MASK && layers.getOrNull(activeLayer) != null && preview != null
             val healing = mode == Mode.HEAL && preview != null
@@ -364,8 +394,9 @@ class MainActivity : Activity() {
         tabFilter = tab("LUT") { setMode(Mode.FILTER) }
         tabMask = tab("마스크") { setMode(Mode.MASK) }
         tabHeal = tab("잡티") { setMode(Mode.HEAL) }
-        tabMaker = tab("LUT 만들기") { setMode(Mode.MAKER) }
-        for (t in listOf(tabFilter, tabMask, tabHeal, tabMaker)) tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
+        tabText = tab("글자") { setMode(Mode.TEXT) }
+        tabMaker = tab("만들기") { setMode(Mode.MAKER) }
+        for (t in listOf(tabFilter, tabMask, tabHeal, tabText, tabMaker)) tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(tabs)
 
         val bottom = FrameLayout(this)
@@ -422,8 +453,13 @@ class MainActivity : Activity() {
         healPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
         healScroll.addView(healPanel)
         bottom.addView(healScroll, -1, -1)
+        textScroll = ScrollView(this).apply { visibility = View.GONE }
+        textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
+        textScroll.addView(textPanel)
+        bottom.addView(textScroll, -1, -1)
         rebuildMaskPanel()
         rebuildHealPanel()
+        rebuildTextPanel()
 
         root.addView(bottom, LinearLayout.LayoutParams(-1, dp(360)))
 
@@ -447,6 +483,10 @@ class MainActivity : Activity() {
         maskScroll.visibility = if (m == Mode.MASK) View.VISIBLE else View.GONE
         healScroll.visibility = if (m == Mode.HEAL) View.VISIBLE else View.GONE
         makerScroll.visibility = if (m == Mode.MAKER) View.VISIBLE else View.GONE
+        textScroll.visibility = if (m == Mode.TEXT) View.VISIBLE else View.GONE
+        styleTab(tabText, m == Mode.TEXT)
+        wmView.editing = m == Mode.TEXT
+        wmView.invalidate()
         styleTab(tabFilter, m == Mode.FILTER)
         styleTab(tabMask, m == Mode.MASK)
         styleTab(tabHeal, m == Mode.HEAL)
@@ -823,6 +863,8 @@ class MainActivity : Activity() {
         thumbW = t.width; thumbH = t.height; thumbPx = pixels(t)
         lastRender = null
         image.setImageBitmap(bmp)
+        autoBtn.visibility = View.VISIBLE
+        wmView.invalidate()
         updateOverlay()
         renderThumbs()
         render()
@@ -940,6 +982,7 @@ class MainActivity : Activity() {
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
         val f = frame; val flip = frameFlip; val cx = cropX; val cy = cropY
         val healList = spots.toList()
+        val wm = watermark
         if (!makerMode) { store.pushRecent(currentSettings()); rebuildRecent() }
         store.current = currentSettings()
         toast("원본 해상도로 저장하는 중…")
@@ -963,7 +1006,9 @@ class MainActivity : Activity() {
                 }
                 val scale = max(w, h).toFloat() / max(prev.width, prev.height)
                 Pipeline.process(px, w, h, grade, scale, Region(b[0], b[1], fw, fh))
-                val out = Bitmap.createBitmap(px, w, h, Bitmap.Config.ARGB_8888)
+                val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                out.setPixels(px, 0, w, 0, 0, w, h)
+                if (wm.enabled) WatermarkPainter.draw(this, Canvas(out), 0f, 0f, w.toFloat(), h.toFloat(), wm)
                 writeToGallery(out, name) != null
             } catch (e: Throwable) {
                 false
@@ -1232,6 +1277,199 @@ class MainActivity : Activity() {
     private fun bigChip(t: String, on: Boolean, onClick: () -> Unit) = smallChip(t, on, onClick).apply {
         textSize = 15f
         setPadding(dp(20), dp(9), dp(20), dp(9))
+    }
+
+    // ───────────────────────── 자동 노출 · 워터마크 ─────────────────────────
+
+    /** 지금 LUT·보정을 입힌 결과를 재서 노출(과 날아가는 하이라이트)을 맞춥니다. */
+    private fun applyAutoExposure() {
+        val px = thumbPx ?: run { toast("먼저 사진을 여세요"); return }
+        val w = thumbW; val h = thumbH
+        val target = if (makerMode) makerParams else adjust
+        val base = if (makerMode) makerBase?.lut else selected?.lut
+        val k = if (makerMode) 1f else intensity
+        val tr = if (makerMode) transfer else null
+        val probe = target.copy(exposure = 0f, highlights = 0f)
+        bg.execute {
+            val copy = px.copyOf()
+            Pipeline.process(copy, w, h, Grade(LutMaker.build(base, tr, probe, baseIntensity = k), 1f, 0f, 0f))
+            val (e, hi) = autoExposure(copy)
+            main.post {
+                target.exposure = e; target.highlights = hi
+                if (makerMode) rebuildMaker() else rebuildAdjust()
+                render()
+                toast("노출 ${ev(e)}" + if (hi < 0f) " · 하이라이트 ${signedPct(hi)}" else "")
+            }
+        }
+    }
+
+    /** 미리보기 사진이 화면(canvasBox) 안에서 차지하는 영역: left, top, width, height */
+    private fun photoRect(): FloatArray? {
+        val p = preview ?: return null
+        if (image.width == 0) return null
+        val s = min(image.width.toFloat() / p.width, image.height.toFloat() / p.height)
+        val w = p.width * s; val h = p.height * s
+        return floatArrayOf((image.width - w) / 2f, (image.height - h) / 2f, w, h)
+    }
+
+    private fun setWatermark(w: Watermark, persist: Boolean = true) {
+        watermark = w
+        wmView.watermark = w
+        if (persist) store.watermark = w
+    }
+
+    // 워터마크 손가락 상태
+    private var wmLastX = 0f
+    private var wmLastY = 0f
+    private var wmRawU = 0.5f
+    private var wmRawV = 0.5f
+    private var wmRawRot = 0f
+    private var wmStartDist = 1f
+    private var wmStartAngle = 0f
+    private var wmStartSize = 0.07f
+    private var wmStartRot = 0f
+    private var wmMoved = false
+    private var wmMulti = false
+    private var wmResync = false
+
+    private fun pinchDist(e: MotionEvent) = hypot(e.getX(1) - e.getX(0), e.getY(1) - e.getY(0))
+    private fun pinchAngle(e: MotionEvent) = Math.toDegrees(atan2((e.getY(1) - e.getY(0)).toDouble(), (e.getX(1) - e.getX(0)).toDouble())).toFloat()
+
+    /**
+     * 인스타 글자처럼: 한 손가락으로 옮기고, 두 손가락으로 크기·회전.
+     * 가운데(가로·세로)와 0°/90° 근처에 오면 자석처럼 붙고 안내선이 보입니다.
+     */
+    private fun watermarkTouch(e: MotionEvent) {
+        val r = photoRect() ?: return
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (!watermark.enabled) { setWatermark(watermark.copy(enabled = true)); rebuildTextPanel() }
+                wmLastX = e.x; wmLastY = e.y
+                wmRawU = watermark.u; wmRawV = watermark.v; wmRawRot = watermark.rotation
+                wmMoved = false; wmMulti = false; wmResync = false
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> if (e.pointerCount == 2) {
+                wmMulti = true
+                wmStartDist = max(1f, pinchDist(e)); wmStartAngle = pinchAngle(e)
+                wmStartSize = watermark.size; wmStartRot = wmRawRot
+                wmLastX = (e.getX(0) + e.getX(1)) / 2; wmLastY = (e.getY(0) + e.getY(1)) / 2
+            }
+            MotionEvent.ACTION_POINTER_UP -> wmResync = true
+            MotionEvent.ACTION_MOVE -> {
+                val two = e.pointerCount >= 2
+                val cx = if (two) (e.getX(0) + e.getX(1)) / 2 else e.x
+                val cy = if (two) (e.getY(0) + e.getY(1)) / 2 else e.y
+                if (wmResync) { wmLastX = cx; wmLastY = cy; wmResync = false; return }
+                val dx = cx - wmLastX; val dy = cy - wmLastY
+                if (abs(dx) + abs(dy) > 2f) wmMoved = true
+                wmLastX = cx; wmLastY = cy
+                wmRawU = (wmRawU + dx / r[2]).coerceIn(0f, 1f)
+                wmRawV = (wmRawV + dy / r[3]).coerceIn(0f, 1f)
+                var size = watermark.size
+                if (two) {
+                    size = (wmStartSize * pinchDist(e) / wmStartDist).coerceIn(0.02f, 0.5f)
+                    var d = pinchAngle(e) - wmStartAngle
+                    while (d > 180f) d -= 360f
+                    while (d < -180f) d += 360f
+                    wmRawRot = wmStartRot + d
+                }
+                // 자석
+                val snap = dp(12).toFloat()
+                val sx = abs((wmRawU - 0.5f) * r[2]) < snap
+                val sy = abs((wmRawV - 0.5f) * r[3]) < snap
+                val nearest = Math.round(wmRawRot / 90f) * 90f
+                val sa = abs(wmRawRot - nearest) < 5f
+                if ((sx && !wmView.guideX) || (sy && !wmView.guideY) || (sa && !wmView.guideAngle && two)) {
+                    wmView.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+                wmView.guideX = sx; wmView.guideY = sy; wmView.guideAngle = sa && (two || wmRawRot != 0f)
+                setWatermark(watermark.copy(
+                    u = if (sx) 0.5f else wmRawU,
+                    v = if (sy) 0.5f else wmRawV,
+                    size = size,
+                    rotation = if (sa) nearest else wmRawRot,
+                ), persist = false)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                wmView.guideX = false; wmView.guideY = false; wmView.guideAngle = false
+                setWatermark(watermark)
+                rebuildTextPanel()
+                // 글자를 그냥 톡 누르면 글자 바꾸기
+                if (e.actionMasked == MotionEvent.ACTION_UP && !wmMoved && !wmMulti && touchesWatermark(e.x, e.y, r)) editWatermarkText()
+            }
+        }
+    }
+
+    private fun touchesWatermark(x: Float, y: Float, r: FloatArray): Boolean {
+        val (hw, hh) = WatermarkPainter.halfExtent(this, watermark, r[2])
+        val cx = r[0] + watermark.u * r[2]; val cy = r[1] + watermark.v * r[3]
+        val a = Math.toRadians(-watermark.rotation.toDouble())
+        val lx = ((x - cx) * Math.cos(a) - (y - cy) * Math.sin(a)).toFloat()
+        val ly = ((x - cx) * Math.sin(a) + (y - cy) * Math.cos(a)).toFloat()
+        return abs(lx) <= hw + dp(16) && abs(ly) <= hh + dp(16)
+    }
+
+    private fun editWatermarkText() {
+        val input = EditText(this).apply {
+            setText(watermark.text)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setSelection(text.length)
+        }
+        val wrap = FrameLayout(this).apply { setPadding(dp(20), dp(8), dp(20), 0); addView(input) }
+        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("워터마크 글자")
+            .setView(wrap)
+            .setPositiveButton("확인") { _, _ ->
+                setWatermark(watermark.copy(text = input.text.toString().ifBlank { "FOFilter" }, enabled = true))
+                rebuildTextPanel()
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun rebuildTextPanel() {
+        textPanel.removeAllViews()
+        val wm = watermark
+        val top = hRow()
+        top.addView(bigChip(if (wm.enabled) "워터마크 켬" else "워터마크 끔", wm.enabled) {
+            setWatermark(watermark.copy(enabled = !watermark.enabled)); rebuildTextPanel()
+        })
+        top.addView(smallChip("글자 바꾸기", false) { editWatermarkText() })
+        textPanel.addView(scrollRow(top))
+        textPanel.addView(label("사진 위 글자를 끌어서 옮기고, 두 손가락으로 크기·회전\n가운데와 수평에 자석처럼 붙어요 · 톡 누르면 글자 바꾸기", 11f, dim).apply {
+            gravity = Gravity.START; setPadding(dp(16), dp(4), dp(16), dp(2))
+        })
+
+        textPanel.addView(section("글꼴"))
+        val fonts = hRow()
+        WmFont.values().forEach { f ->
+            fonts.addView(smallChip(f.label, f == wm.font) { setWatermark(watermark.copy(font = f)); rebuildTextPanel() }.apply {
+                typeface = WmFont.typeface(this@MainActivity, f)
+                textSize = 14f
+            })
+        }
+        textPanel.addView(scrollRow(fonts))
+
+        textPanel.addView(section("색"))
+        val colors = hRow()
+        listOf("흰색" to Color.WHITE, "검정" to Color.BLACK, "크림" to Color.parseColor("#F3E9D2"),
+            "레드" to red, "오렌지" to orange).forEach { (n, c) ->
+            colors.addView(smallChip(n, (wm.color and 0xFFFFFF) == (c and 0xFFFFFF)) {
+                setWatermark(watermark.copy(color = c)); rebuildTextPanel()
+            })
+        }
+        colors.addView(smallChip("그림자", wm.shadow) { setWatermark(watermark.copy(shadow = !watermark.shadow)); rebuildTextPanel() })
+        textPanel.addView(scrollRow(colors))
+
+        textPanel.addView(section("모양"))
+        slider(textPanel, "크기", 0.02f, 0.3f, wm.size, { "${(it * 100).roundToInt()}" }, def = 0.07f) { setWatermark(watermark.copy(size = it)) }
+        slider(textPanel, "투명도", 0.1f, 1f, wm.opacity, ::pct, def = 0.85f) { setWatermark(watermark.copy(opacity = it)) }
+        slider(textPanel, "자간", -0.05f, 0.6f, wm.spacing, { String.format("%.2f", it) }, def = 0.05f) { setWatermark(watermark.copy(spacing = it)) }
+        val pos = hRow()
+        pos.addView(smallChip("가운데로", false) { setWatermark(watermark.copy(u = 0.5f, v = 0.5f)) })
+        pos.addView(smallChip("아래 가운데", false) { setWatermark(watermark.copy(u = 0.5f, v = 0.88f)) })
+        pos.addView(smallChip("기울기 0°", false) { setWatermark(watermark.copy(rotation = 0f)) })
+        textPanel.addView(scrollRow(pos))
     }
 
     // ───────────────────────── 작은 부품 ─────────────────────────

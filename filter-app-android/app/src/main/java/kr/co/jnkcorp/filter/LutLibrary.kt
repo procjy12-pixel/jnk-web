@@ -21,7 +21,7 @@ class LutLibrary(private val ctx: Context) {
     private val dir = File(ctx.filesDir, "luts").apply { mkdirs() }
 
     fun builtIns(): List<LutEntry> = Look.values().map { l ->
-        LutEntry(l.label, l.sub, if (l == Look.ORIGINAL) null else l.bake(), Presets.BASIC, look = l)
+        LutEntry(l.label, l.sub, if (l == Look.ORIGINAL) null else l.bake(), l.category, look = l)
     }
 
     /** 앱에 같이 넣은 필름 LUT (assets/luts) */

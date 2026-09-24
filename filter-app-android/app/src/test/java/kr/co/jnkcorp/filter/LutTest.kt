@@ -201,6 +201,26 @@ class LutTest {
         assertTrue("맞춘 뒤엔 거의 회색: ${o.toList()}", abs(o[0] - o[2]) < 0.03f && abs(o[1] - (o[0] + o[2]) / 2) < 0.03f)
     }
 
+    @Test fun autoExposureBrightensDarkAndDarkensBright() {
+        val dark = IntArray(1000) { 0xFF303030.toInt() }
+        val bright = IntArray(1000) { 0xFFE0E0E0.toInt() }
+        assertTrue(autoExposure(dark).first > 0.5f)
+        assertTrue(autoExposure(bright).first < -0.3f)
+        val mid = IntArray(1000) { 0xFF767676.toInt() }   // 18% 회색 근처
+        assertTrue(abs(autoExposure(mid).first) < 0.2f)
+    }
+
+    @Test fun allLooksAreSane() {
+        for (l in Look.values()) {
+            val lut = l.bake()
+            assertTrue(l.name, lut.data.all { !it.isNaN() && it in 0f..1f })
+            lut.sample(0f, 0f, 0f, o); val black = luma(o[0], o[1], o[2])
+            lut.sample(1f, 1f, 1f, o); val white = luma(o[0], o[1], o[2])
+            lut.sample(0.5f, 0.5f, 0.5f, o); val grey = luma(o[0], o[1], o[2])
+            assertTrue("${l.name} 밝기 순서", black < grey && grey < white)
+        }
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)
@@ -225,7 +245,7 @@ class LutTest {
 
         val tiles = ArrayList<IntArray>()
         tiles += px.copyOf()
-        for (l in listOf(Look.TEAL_ORANGE, Look.LEICA_CLASSIC, Look.LEICA_MONO)) {
+        for (l in Look.values().filter { it.category == Presets.LEICA }) {
             val c = px.copyOf()
             Pipeline.process(c, w, h, Grade(l.bake(), 1f, l.grain, l.vignette))
             tiles += c

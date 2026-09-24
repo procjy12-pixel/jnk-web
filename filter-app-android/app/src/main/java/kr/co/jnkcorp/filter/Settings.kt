@@ -65,6 +65,10 @@ class SettingsStore(ctx: Context) {
         get() = prefs.getString("current", null)?.let { runCatching { Settings.fromJson(JSONObject(it)) }.getOrNull() }
         set(v) { prefs.edit().putString("current", v?.toJson()?.toString()).apply() }
 
+    var watermark: Watermark
+        get() = prefs.getString("watermark", null)?.let { runCatching { Watermark.fromJson(JSONObject(it)) }.getOrNull() } ?: Watermark()
+        set(v) { prefs.edit().putString("watermark", v.toJson().toString()).apply() }
+
     var autoSave: Boolean
         get() = prefs.getBoolean("autoSave", true)
         set(v) { prefs.edit().putBoolean("autoSave", v).apply() }

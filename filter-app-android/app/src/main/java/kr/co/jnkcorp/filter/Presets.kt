@@ -9,6 +9,7 @@ object Presets {
     class Preset(val path: String, val name: String, val category: String)
 
     const val BASIC = "기본"
+    const val LEICA = "라이카"
     const val COLOR_NEG = "컬러 네거"
     const val SLIDE = "슬라이드"
     const val FUJI = "후지 시뮬"
@@ -17,7 +18,7 @@ object Presets {
     const val INSTANT = "인스턴트"
     const val MINE = "내 LUT"
 
-    val categories = listOf(BASIC, COLOR_NEG, SLIDE, FUJI, CINEMA, BW, INSTANT, MINE)
+    val categories = listOf(BASIC, LEICA, COLOR_NEG, SLIDE, FUJI, CINEMA, BW, INSTANT, MINE)
 
     val all = listOf(
         Preset("negative_new/kodak_portra_400", "Portra 400", COLOR_NEG),
