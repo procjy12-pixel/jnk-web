@@ -8,6 +8,8 @@ import kotlin.math.sqrt
 data class MakerParams(
     var exposure: Float = 0f,      // -2..2 EV
     var contrast: Float = 0f,      // -1..1
+    var highlights: Float = 0f,    // -1..1  (- 하이라이트 눌러서 살리기)
+    var shadows: Float = 0f,       // -1..1  (+ 그림자 들어올리기)
     var saturation: Float = 0f,    // -1..1  (-1 이면 흑백)
     var temperature: Float = 0f,   // -1..1  (+ 따뜻하게)
     var tint: Float = 0f,          // -1..1  (+ 마젠타)
@@ -23,14 +25,27 @@ data class MakerParams(
  */
 object LutMaker {
 
-    fun build(base: Lut3D?, transfer: ColorTransfer?, p: MakerParams, title: String = "", size: Int = Lut3D.DEFAULT_SIZE): Lut3D {
+    /**
+     * [baseIntensity] 는 기준 LUT 를 얼마나 섞을지 (LUT 적용 탭의 강도).
+     * 흑백 LUT 는 강도를 낮춰도 색이 돌아오지 않게 원본 흑백과 섞습니다.
+     */
+    fun build(
+        base: Lut3D?, transfer: ColorTransfer?, p: MakerParams, title: String = "",
+        size: Int = Lut3D.DEFAULT_SIZE, baseIntensity: Float = 1f,
+    ): Lut3D {
+        val baseMono = base?.isMono == true
+        val tmp = FloatArray(3)
         val shadowTint = hueTint(p.shadowHue)
         val highTint = hueTint(p.highlightHue)
         val gain = 2f.pow(p.exposure)
         return Lut3D.bake(size, title) { r0, g0, b0, o ->
             o[0] = r0; o[1] = g0; o[2] = b0
             transfer?.apply(o)
-            base?.sample(o[0], o[1], o[2], o)
+            if (base != null) {
+                base.sample(o[0], o[1], o[2], tmp)
+                if (baseMono) { val m = luma(o[0], o[1], o[2]); o[0] = m; o[1] = m; o[2] = m }
+                for (c in 0..2) o[c] = mix(o[c], tmp[c], baseIntensity)
+            }
             var r = o[0]; var g = o[1]; var b = o[2]
 
             // 노출 (선형 공간에서 곱하기)
@@ -53,6 +68,13 @@ object LutMaker {
                 r = 0.5f + (r - 0.5f) * k; g = 0.5f + (g - 0.5f) * k; b = 0.5f + (b - 0.5f) * k
             }
 
+            // 하이라이트·그림자: 끝점(순흑·순백)은 그대로 두고 밝은 쪽/어두운 쪽만 움직임
+            if (p.highlights != 0f || p.shadows != 0f) {
+                r = tone(r, p.highlights, p.shadows)
+                g = tone(g, p.highlights, p.shadows)
+                b = tone(b, p.highlights, p.shadows)
+            }
+
             // 채도
             Looks.saturate(r, g, b, 1f + p.saturation, o)
             r = o[0]; g = o[1]; b = o[2]
@@ -71,6 +93,11 @@ object LutMaker {
             o[1] = lift + (1f - lift) * g
             o[2] = lift + (1f - lift) * b
         }
+    }
+
+    private fun tone(x: Float, hi: Float, sh: Float): Float {
+        val v = clamp01(x)
+        return v + hi * 1.2f * v * v * (1f - v) + sh * 1.2f * v * (1f - v) * (1f - v)
     }
 
     /** 색상(도)을 밝기 0 인 색 차이 벡터로. 더해도 밝기는 거의 그대로입니다. */

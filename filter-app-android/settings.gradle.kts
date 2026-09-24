@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "JnkFilter"
+rootProject.name = "FOFilter"
 include(":app")

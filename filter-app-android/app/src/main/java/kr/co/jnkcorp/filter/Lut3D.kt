@@ -67,7 +67,7 @@ class Lut3D(val size: Int, val data: FloatArray, val title: String = "") {
     /** Adobe/Resolve 공용 .cube 텍스트 */
     fun toCube(): String {
         val sb = StringBuilder(data.size * 10 + 128)
-        sb.append("# JNK Filter\n")
+        sb.append("# FOFilter\n")
         if (title.isNotBlank()) sb.append("TITLE \"").append(title.replace("\"", "'")).append("\"\n")
         sb.append("LUT_3D_SIZE ").append(size).append('\n')
         sb.append("DOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n")

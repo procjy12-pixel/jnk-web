@@ -71,6 +71,38 @@ class LutTest {
         assertTrue("노출 +1 은 밝게", o[0] > 0.5f)
     }
 
+    @Test fun highlightsShadowsKeepEndpoints() {
+        val lut = LutMaker.build(null, null, MakerParams(highlights = -1f, shadows = 1f))
+        lut.sample(0f, 0f, 0f, o); assertEquals(0f, o[0], 1e-3f)
+        lut.sample(1f, 1f, 1f, o); assertEquals(1f, o[0], 1e-3f)
+        lut.sample(0.25f, 0.25f, 0.25f, o); assertTrue("그림자 + 는 어두운 곳을 밝게", o[0] > 0.3f)
+        lut.sample(0.8f, 0.8f, 0.8f, o); assertTrue("하이라이트 - 는 밝은 곳을 누름", o[0] < 0.75f)
+    }
+
+    @Test fun baseIntensityBlends() {
+        val base = Look.TEAL_ORANGE.bake()
+        val zero = LutMaker.build(base, null, MakerParams(), size = 9, baseIntensity = 0f)
+        val id = Lut3D.identity(9)
+        for (i in zero.data.indices) assertEquals(id.data[i], zero.data[i], 1e-4f)
+        // 흑백 LUT 는 강도를 낮춰도 무채색 유지
+        LutMaker.build(Look.LEICA_MONO.bake(), null, MakerParams(), baseIntensity = 0.5f).sample(0.9f, 0.2f, 0.1f, o)
+        assertTrue(abs(o[0] - o[1]) < 1e-3 && abs(o[1] - o[2]) < 1e-3)
+    }
+
+    /** 앱에 넣은 필름 LUT 가 모두 읽히는지 (Presets 목록과 assets 파일이 맞는지) */
+    @Test fun allBundledLutsParse() {
+        val root = assetsDir()
+        for (p in Presets.all) {
+            val f = File(root, "luts/${p.path}.cube")
+            assertTrue("없음: ${f.path}", f.exists())
+            val lut = f.reader().use { Lut3D.parseCube(it) }
+            assertTrue(lut.size >= 2)
+        }
+    }
+
+    private fun assetsDir(): File =
+        listOf(File("src/main/assets"), File("app/src/main/assets")).first { it.exists() }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)
@@ -112,6 +144,16 @@ class LutTest {
             tiles += c2
         }
         tiles.forEachIndexed { i, p -> writePpm(File(outDir, "tile$i.ppm"), w, h, p) }
+        // 앱에 넣은 필름 LUT 전부
+        val names = StringBuilder()
+        Presets.all.forEachIndexed { i, p ->
+            val lut = File(assetsDir(), "luts/${p.path}.cube").reader().use { Lut3D.parseCube(it) }
+            val c = px.copyOf()
+            Pipeline.process(c, w, h, Grade(lut, 1f, 0f, 0f))
+            writePpm(File(outDir, "film$i.ppm"), w, h, c)
+            names.append(p.category).append(" · ").append(p.name).append('\n')
+        }
+        File(outDir, "film-names.txt").writeText(names.toString())
         File(outDir, "TealOrange.cube").writeText(Look.TEAL_ORANGE.bake().withTitle("Teal & Orange").toCube())
     }
 

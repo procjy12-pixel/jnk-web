@@ -8,7 +8,10 @@ import android.provider.OpenableColumns
 import java.io.File
 
 /** 목록에 보이는 LUT 한 개. 기본 룩이면 [look], 사용자 LUT 면 [file] 이 있습니다. */
-class LutEntry(val name: String, val sub: String, val lut: Lut3D?, val look: Look? = null, val file: File? = null)
+class LutEntry(
+    val name: String, val sub: String, val lut: Lut3D?,
+    val category: String, val look: Look? = null, val file: File? = null,
+)
 
 /** 사용자가 만들거나 가져온 LUT 를 앱 저장소(files/luts 폴더에 .cube 파일로)에 둡니다. */
 class LutLibrary(private val ctx: Context) {
@@ -16,7 +19,17 @@ class LutLibrary(private val ctx: Context) {
     private val dir = File(ctx.filesDir, "luts").apply { mkdirs() }
 
     fun builtIns(): List<LutEntry> = Look.values().map { l ->
-        LutEntry(l.label, l.sub, if (l == Look.ORIGINAL) null else l.bake(), look = l)
+        LutEntry(l.label, l.sub, if (l == Look.ORIGINAL) null else l.bake(), Presets.BASIC, look = l)
+    }
+
+    /** 앱에 같이 넣은 필름 LUT (assets/luts) */
+    fun bundled(): List<LutEntry> = Presets.all.mapNotNull { p ->
+        try {
+            val lut = ctx.assets.open("luts/${p.path}.cube").reader().use { Lut3D.parseCube(it, p.name) }
+            LutEntry(p.name, p.category, lut, p.category)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun userLuts(): List<LutEntry> = (dir.listFiles { f -> f.name.endsWith(".cube") } ?: emptyArray())
@@ -24,7 +37,7 @@ class LutLibrary(private val ctx: Context) {
         .mapNotNull { f ->
             try {
                 val lut = f.reader().use { Lut3D.parseCube(it, f.nameWithoutExtension) }
-                LutEntry(lut.title.ifBlank { f.nameWithoutExtension }, "내 LUT · ${lut.size}³", lut, file = f)
+                LutEntry(lut.title.ifBlank { f.nameWithoutExtension }, "내 LUT · ${lut.size}³", lut, Presets.MINE, file = f)
             } catch (e: Exception) {
                 null
             }
@@ -37,7 +50,7 @@ class LutLibrary(private val ctx: Context) {
         var n = 2
         while (f.exists()) f = File(dir, "$safe ($n).cube").also { n++ }
         f.writeText(titled.toCube())
-        return LutEntry(name, "내 LUT · ${lut.size}³", titled, file = f)
+        return LutEntry(name, "내 LUT · ${lut.size}³", titled, Presets.MINE, file = f)
     }
 
     fun delete(e: LutEntry) { e.file?.delete() }
@@ -53,18 +66,18 @@ class LutLibrary(private val ctx: Context) {
         return save(lut.title.ifBlank { base }, lut)
     }
 
-    /** 다운로드/JNK LUT 폴더로 .cube 내보내기 */
+    /** 다운로드/FOFilter 폴더로 .cube 내보내기 */
     fun export(e: LutEntry): String {
         val lut = (e.lut ?: Lut3D.identity()).withTitle(e.name)
         val name = e.name.replace(Regex("[^\\p{L}\\p{N} _-]"), "").trim().ifBlank { "LUT" } + ".cube"
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, "application/octet-stream")
-            put(MediaStore.Downloads.RELATIVE_PATH, "Download/JNK LUT")
+            put(MediaStore.Downloads.RELATIVE_PATH, "Download/FOFilter")
         }
         val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: throw IllegalStateException("저장 위치를 만들 수 없습니다")
         ctx.contentResolver.openOutputStream(uri)?.writer()?.use { it.write(lut.toCube()) }
-        return "Download/JNK LUT/$name"
+        return "Download/FOFilter/$name"
     }
 }
