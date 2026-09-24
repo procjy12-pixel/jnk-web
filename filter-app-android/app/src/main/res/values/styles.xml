@@ -1,0 +1,11 @@
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#E8743B</item>
+        <item name="android:colorPrimary">#111111</item>
+        <item name="android:statusBarColor">#0B0B0B</item>
+        <item name="android:navigationBarColor">#0B0B0B</item>
+        <item name="android:windowBackground">@color/bg</item>
+    </style>
+    <color name="bg">#0B0B0B</color>
+    <color name="leica_red">#D8001C</color>
+</resources>
