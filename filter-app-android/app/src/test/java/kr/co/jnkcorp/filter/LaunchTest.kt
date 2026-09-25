@@ -63,6 +63,55 @@ class LaunchTest {
         org.junit.Assert.assertNotNull(findByText(a.window.decorView, "3"))
     }
 
+    /** 잡티 탭: 2배 확대·이동한 상태에서 한 손가락으로 누른 곳이 사진의 정확한 위치로, 되돌리기·다시하기 */
+    @Test fun healTapWhileZoomed() {
+        val ctl = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val a = ctl.get()
+        waitReady(a)
+        fun field(n: String) = MainActivity::class.java.getDeclaredField(n).apply { isAccessible = true }
+        fun call(n: String) = MainActivity::class.java.getDeclaredMethod(n).apply { isAccessible = true }.invoke(a)
+        // 1000x800 사진을 넣고 화면 배치
+        val bmp = android.graphics.Bitmap.createBitmap(1000, 800, android.graphics.Bitmap.Config.ARGB_8888)
+        bmp.eraseColor(0xFFD7AA91.toInt())
+        field("previewFull").set(a, bmp)
+        call("applyFrame")
+        (field("hint").get(a) as android.view.View).visibility = android.view.View.GONE   // 사진을 불러오면 사라지는 안내
+        findByText(a.window.decorView, "잡티")!!.performClick()
+        ShadowLooper.idleMainLooper()
+        drawAll(a)
+        val box = field("canvasBox").get(a) as android.widget.FrameLayout
+        val image = field("image").get(a) as android.widget.ImageView
+        // 2배 확대, 왼쪽 위 기준, 오른쪽 아래쪽으로 옮긴 상태
+        field("zoom").setFloat(a, 2f)
+        box.pivotX = 0f; box.pivotY = 0f; box.scaleX = 2f; box.scaleY = 2f
+        box.translationX = -box.width * 0.2f; box.translationY = -box.height * 0.7f
+        val stage = box.parent as android.view.View
+        // 화면 가운데를 톡
+        val sx = stage.width / 2f; val sy = stage.height / 2f
+        // 기대 위치 (탭 전에 계산): 확대 전 좌표 = (화면 - 이동) / 2 → 사진 좌표
+        val cx = (sx - box.translationX) / 2f; val cy = (sy - box.translationY) / 2f
+        val s = kotlin.math.min(image.width / 1000f, image.height / 800f)
+        val ox = (image.width - 1000 * s) / 2f; val oy = (image.height - 800 * s) / 2f
+        val eu = (cx - ox) / s / 1000f; val ev = (cy - oy) / s / 800f
+        org.junit.Assert.assertTrue("화면 배치가 돼 있어야 함", image.width > 0 && image.height > 0)
+        val t = android.os.SystemClock.uptimeMillis()
+        stage.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t, android.view.MotionEvent.ACTION_DOWN, sx, sy, 0))
+        stage.dispatchTouchEvent(android.view.MotionEvent.obtain(t, t + 50, android.view.MotionEvent.ACTION_UP, sx, sy, 0))
+        ShadowLooper.idleMainLooper()
+        @Suppress("UNCHECKED_CAST") val spots = field("spots").get(a) as List<Spot>
+        org.junit.Assert.assertEquals(1, spots.size)
+        org.junit.Assert.assertEquals(eu, spots[0].u, 0.01f)
+        org.junit.Assert.assertEquals(ev, spots[0].v, 0.01f)
+        // 확대 전 화면 가운데(0.5)가 아니라, 확대·이동으로 보이던 곳이어야 함
+        org.junit.Assert.assertTrue("확대 상태를 반영해야 함: ${spots[0].u}", kotlin.math.abs(eu - 0.5f) > 0.05f || kotlin.math.abs(ev - 0.5f) > 0.05f)
+        // 되돌리기 → 0개, 다시하기 → 1개
+        findByText(a.window.decorView, "↶ 되돌리기")!!.performClick(); ShadowLooper.idleMainLooper()
+        org.junit.Assert.assertEquals(0, (field("spots").get(a) as List<*>).size)
+        findByText(a.window.decorView, "↷ 다시하기")!!.performClick(); ShadowLooper.idleMainLooper()
+        org.junit.Assert.assertEquals(1, (field("spots").get(a) as List<*>).size)
+        drawAll(a)
+    }
+
     private fun waitReady(a: MainActivity) {
         val f = MainActivity::class.java.getDeclaredField("ready").apply { isAccessible = true }
         for (i in 0 until 100) {

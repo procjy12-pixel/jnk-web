@@ -11,8 +11,8 @@ android {
         applicationId = "kr.co.jnkcorp.filter"
         minSdk = 29
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.7.1"
+        versionCode = 13
+        versionName = "0.7.2"
         // 폰(ARM)용만 넣어 용량을 줄임 (얼굴 인식 부품이 기기 종류마다 8MB 쯤)
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

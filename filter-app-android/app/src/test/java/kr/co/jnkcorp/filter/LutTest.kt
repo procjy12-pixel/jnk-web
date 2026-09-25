@@ -294,6 +294,19 @@ class LutTest {
         assertEquals(3f, Lenses.tidy(2.9f), 0.001f)
     }
 
+    @Test fun featherControlsEdge() {
+        val w = 200; val h = 200
+        fun run(feather: Float): Int {
+            val px = skinImage(w, h)
+            darkDot(px, w, 100, 100, 12, mild)   // 반경 12 점, 지우개 반경 10 → 가장자리(11px)는 페더에 따라
+            AutoFix.heal(px, w, h, listOf(Spot(0.5f, 0.5f, 10f / 200, feather = feather)))
+            return (px[100 * w + 111] shr 16) and 0xFF
+        }
+        val hard = run(0f); val soft = run(1f)
+        assertTrue("페더 0 은 반경 밖을 거의 안 건드림(어두운 채): $hard", hard < 195)
+        assertTrue("페더 1 은 반경 밖까지 부드럽게 메움: $soft", soft > hard + 5)
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

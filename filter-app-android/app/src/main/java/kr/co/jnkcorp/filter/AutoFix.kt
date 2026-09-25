@@ -14,7 +14,7 @@ import kotlin.math.sqrt
  * 잡티 하나. 좌표는 자르기 전 사진 전체 기준 0..1, 반지름은 긴 변 대비 비율.
  * 해상도와 상관없이 미리보기와 원본 저장에 똑같이 적용하려고 비율로 둡니다.
  */
-data class Spot(val u: Float, val v: Float, val r: Float, val auto: Boolean = false)
+data class Spot(val u: Float, val v: Float, val r: Float, val auto: Boolean = false, val feather: Float = 0.5f)
 
 object AutoFix {
 
@@ -155,15 +155,21 @@ object AutoFix {
     /** [spots] 를 모두 지웁니다 (제자리 수정). */
     fun heal(px: IntArray, w: Int, h: Int, spots: List<Spot>) {
         val long = max(w, h)
-        for (s in spots) healOne(px, w, h, s.u * w, s.v * h, max(1.5f, s.r * long))
+        for (s in spots) healOne(px, w, h, s.u * w, s.v * h, max(1.5f, s.r * long), s.feather)
     }
 
     /**
      * 힐링 브러시 방식: 근처에서 결이 비슷한 조각을 복사해 오고,
      * 가장자리 색 차이를 안쪽으로 부드럽게 메워서 경계가 보이지 않게 합니다.
      */
-    private fun healOne(px: IntArray, w: Int, h: Int, cx: Float, cy: Float, r: Float) {
-        val ring = r * 1.25f
+    /**
+     * [r] 안쪽은 완전히 메우고, [feather](0..1) 만큼 가장자리를 부드럽게 원래 피부와 섞습니다.
+     * 0 이면 경계가 또렷, 1 이면 반지름의 1.6배까지 서서히.
+     */
+    private fun healOne(px: IntArray, w: Int, h: Int, cx: Float, cy: Float, r: Float, feather: Float = 0.5f) {
+        val f = feather.coerceIn(0f, 1f)
+        val inner = r * (1f - 0.6f * f)
+        val ring = r * (1.1f + 0.5f * f)
         val samples = 24
         val target = Array(samples) { FloatArray(3) }
         for (a in 0 until samples) {
@@ -205,7 +211,7 @@ object AutoFix {
             val ang = ((atan2(y - cy, x - cx) / (2 * PI) * samples) + samples) % samples
             val a0 = ang.toInt() % samples; val a1 = (a0 + 1) % samples; val f = (ang - ang.toInt()).toFloat()
             readOrig(orig, bw, x0, y0, x1, y1, px, w, h, x + bestDx, y + bestDy, cl)
-            val wgt = 1f - smooth(r * 0.85f, ring, d)
+            val wgt = 1f - smooth(inner, ring, d)
             val c = px[y * w + x]
             val o = floatArrayOf(((c shr 16) and 0xFF) / 255f, ((c shr 8) and 0xFF) / 255f, (c and 0xFF) / 255f)
             val out = IntArray(3)
