@@ -49,32 +49,47 @@ object AutoFix {
     // ───────────── 잡티 찾기 ─────────────
 
     /**
-     * 피부색 영역에서 주변보다 작고 어두운 점을 찾습니다.
-     * [sensitivity] 0..1 (클수록 옅은 잡티까지)
+     * 잡티만 찾습니다. "주변보다 어두운 곳" 이 아니라, 아래를 모두 만족하는 점만:
+     *  - [allowed] 가 있으면 그 안(얼굴 피부: 눈·눈썹·코·입 제외)에서만
+     *  - 작고 둥근 점 (길쭉한 눈썹·속눈썹·주름은 제외)
+     *  - 사방이 깨끗한 피부로 둘러싸임 (콧구멍 두 개·눈가처럼 옆에 다른 어두운 게 있으면 제외)
+     *  - 너무 진하지 않음 (눈동자·콧구멍은 잡티보다 훨씬 어두움)
+     * [sensitivity] 0..1 (클수록 옅은 잡티까지), [faceWidth] 는 얼굴 폭(px, 모르면 0) — 잡티 크기 상한에 씀.
      */
-    fun detectBlemishes(px: IntArray, w: Int, h: Int, sensitivity: Float = 0.5f): List<Spot> {
+    fun detectBlemishes(
+        px: IntArray, w: Int, h: Int, sensitivity: Float = 0.5f,
+        allowed: BooleanArray? = null, faceWidth: Float = 0f,
+    ): List<Spot> {
         val n = w * h
-        val lum = FloatArray(n)
+        val lum = FloatArray(n); val rr = FloatArray(n); val gg = FloatArray(n); val bb = FloatArray(n)
         for (i in 0 until n) {
             val c = px[i]
-            lum[i] = luma(((c shr 16) and 0xFF) / 255f, ((c shr 8) and 0xFF) / 255f, (c and 0xFF) / 255f)
+            rr[i] = ((c shr 16) and 0xFF) / 255f; gg[i] = ((c shr 8) and 0xFF) / 255f; bb[i] = (c and 0xFF) / 255f
+            lum[i] = luma(rr[i], gg[i], bb[i])
         }
-        val rad = max(4, max(w, h) / 90)
+        // 잡티 지름 상한: 얼굴 폭의 3.5% (얼굴을 모르면 사진 긴 변의 1.2%)
+        val maxDiam = if (faceWidth > 0f) faceWidth * 0.035f else max(w, h) * 0.012f
+        val rad = max(3, (maxDiam * 1.5f).roundToInt())
         val blur = boxBlur(lum, w, h, rad)
-        val thr = 0.09f - 0.06f * sensitivity.coerceIn(0f, 1f)
+        val br = boxBlur(rr, w, h, rad); val bg = boxBlur(gg, w, h, rad); val bbl = boxBlur(bb, w, h, rad)
+        val s = sensitivity.coerceIn(0f, 1f)
+        val thr = 0.075f - 0.04f * s          // 이만큼은 어두워야
+        val tooDark = 0.20f                    // 이보다 더 어두우면 잡티가 아님(눈동자·콧구멍)
+
+        fun skinBg(i: Int): Boolean {
+            val r = br[i]; val g = bg[i]; val b = bbl[i]
+            return blur[i] in 0.28f..0.95f && r > g && g > b * 0.85f && r - b in 0.06f..0.45f
+        }
 
         val cand = BooleanArray(n)
         for (i in 0 until n) {
-            if (blur[i] - lum[i] < thr) continue
-            val c = px[i]
-            val r = ((c shr 16) and 0xFF) / 255f
-            val g = ((c shr 8) and 0xFF) / 255f
-            val b = (c and 0xFF) / 255f
-            // 둘레(블러) 쪽이 피부색이어야 함: 빨강 > 초록 > 파랑, 너무 어둡거나 밝지 않게
-            if (blur[i] in 0.25f..0.95f && r > g && g >= b * 0.9f && r - b > 0.06f) cand[i] = true
+            if (allowed != null && !allowed[i]) continue
+            val d = blur[i] - lum[i]
+            if (d < thr || d > tooDark) continue
+            if (skinBg(i)) cand[i] = true
         }
 
-        val maxArea = (rad * rad * 1.2f).roundToInt()
+        val maxArea = (PI * (maxDiam / 2) * (maxDiam / 2)).toFloat().coerceAtLeast(6f)
         val seen = BooleanArray(n)
         val stack = IntArray(n)
         val spots = ArrayList<Spot>()
@@ -83,22 +98,56 @@ object AutoFix {
             if (!cand[start] || seen[start]) continue
             var sp = 0; stack[sp++] = start; seen[start] = true
             var area = 0; var sx = 0L; var sy = 0L
+            var minX = w; var maxX = 0; var minY = h; var maxY = 0
+            var dark = 0f
             while (sp > 0) {
                 val i = stack[--sp]
-                area++; sx += i % w; sy += i / w
                 val x = i % w; val y = i / w
+                area++; sx += x; sy += y; dark += blur[i] - lum[i]
+                if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y
+                if (area > maxArea * 3) continue   // 너무 크면 더 볼 필요 없음
                 if (x > 0 && cand[i - 1] && !seen[i - 1]) { seen[i - 1] = true; stack[sp++] = i - 1 }
                 if (x < w - 1 && cand[i + 1] && !seen[i + 1]) { seen[i + 1] = true; stack[sp++] = i + 1 }
                 if (y > 0 && cand[i - w] && !seen[i - w]) { seen[i - w] = true; stack[sp++] = i - w }
                 if (y < h - 1 && cand[i + w] && !seen[i + w]) { seen[i + w] = true; stack[sp++] = i + w }
             }
             if (area < 3 || area > maxArea) continue
+            // 둥근가: 길쭉하면(눈썹·속눈썹·주름) 제외
+            val bw = maxX - minX + 1; val bh = maxY - minY + 1
+            if (max(bw, bh).toFloat() / min(bw, bh) > 2.0f) continue
+            if (area.toFloat() / (bw * bh) < 0.45f) continue
+            // 너무 진하면 제외
+            if (dark / area > tooDark * 0.9f) continue
+            // 사방이 깨끗한 피부인가
             val cx = sx.toFloat() / area; val cy = sy.toFloat() / area
-            val radius = sqrt(area / PI.toFloat()) * 1.8f + 1.5f
+            val r = sqrt(area / PI.toFloat())
+            if (!cleanRing(cx, cy, max(r * 2.6f, r + 3f), w, h, lum, blur, cand, allowed, ::skinBg)) continue
+            val radius = r * 1.5f + 1f
             spots += Spot(cx / w, cy / h, radius / long, auto = true)
-            if (spots.size >= 300) break
+            if (spots.size >= 200) break
         }
         return spots
+    }
+
+    /** 점 둘레를 한 바퀴 돌며, 거의 다 깨끗한 피부인지 */
+    private fun cleanRing(
+        cx: Float, cy: Float, ring: Float, w: Int, h: Int, lum: FloatArray, blur: FloatArray,
+        cand: BooleanArray, allowed: BooleanArray?, skin: (Int) -> Boolean,
+    ): Boolean {
+        val samples = 20
+        var ok = 0
+        for (a in 0 until samples) {
+            val t = 2 * PI * a / samples
+            val x = (cx + ring * cos(t)).roundToInt(); val y = (cy + ring * sin(t)).roundToInt()
+            if (x !in 0 until w || y !in 0 until h) continue
+            val i = y * w + x
+            if (cand[i]) continue
+            if (allowed != null && !allowed[i]) continue
+            if (!skin(i)) continue
+            if (kotlin.math.abs(lum[i] - blur[i]) > 0.06f) continue   // 둘레에도 굴곡(눈가·콧방울)이 있으면
+            ok++
+        }
+        return ok >= samples - 2
     }
 
     // ───────────── 잡티 지우기 (힐링) ─────────────

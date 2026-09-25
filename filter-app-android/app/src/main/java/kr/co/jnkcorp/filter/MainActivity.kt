@@ -1306,12 +1306,20 @@ class MainActivity : Activity() {
         toast("잡티를 찾는 중…")
         bg.execute {
             val px = pixels(full)
-            val found = AutoFix.detectBlemishes(px, full.width, full.height, sens)
+            // 얼굴을 찾아 눈·눈썹·코·입은 빼고 얼굴 피부에서만 찾음
+            val face = FaceGuard.detect(full)
+            val allowed = face?.allowedMask(full.width, full.height)
+            val found = if (face == null) emptyList()
+                else AutoFix.detectBlemishes(px, full.width, full.height, sens, allowed, face.width)
             main.post {
                 spots.removeAll { it.auto }
                 spots.addAll(found)
                 rebuildHeal()
-                toast(if (found.isEmpty()) "지울 잡티를 못 찾았어요 · 민감도를 올려 보세요" else "잡티 ${found.size}개를 지웠어요")
+                toast(when {
+                    face == null -> "얼굴을 찾지 못했어요 · 자동은 얼굴 사진에서만, 나머지는 톡 눌러 지워 주세요"
+                    found.isEmpty() -> "지울 잡티를 못 찾았어요 · 민감도를 올려 보세요"
+                    else -> "잡티 ${found.size}개를 지웠어요 (눈·코·입은 건드리지 않음)"
+                })
             }
         }
     }
@@ -1333,6 +1341,9 @@ class MainActivity : Activity() {
     private fun rebuildHealPanel() {
         healPanel.removeAllViews()
         healPanel.addView(section("자동"))
+        healPanel.addView(label("얼굴을 찾아 볼·이마·턱 피부의 작고 옅은 점만 지워요\n눈·눈썹·코·입과 그 둘레는 건드리지 않아요", 11f, dim).apply {
+            gravity = Gravity.START; setPadding(dp(16), dp(2), dp(16), dp(2))
+        })
         val auto = hRow()
         auto.addView(pill("잡티 자동 제거", filled = true) { autoHeal() })
         healPanel.addView(scrollRow(auto))
