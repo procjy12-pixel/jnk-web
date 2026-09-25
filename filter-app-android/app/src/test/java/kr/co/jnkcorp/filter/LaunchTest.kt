@@ -52,6 +52,15 @@ class LaunchTest {
         val view = CameraActivity::class.java.getDeclaredField("view").apply { isAccessible = true }.get(ctl.get()) as android.widget.ImageView
         view.setImageBitmap(android.graphics.Bitmap.createBitmap(300, 400, android.graphics.Bitmap.Config.ARGB_8888))
         drawAll(ctl.get())
+        // 렌즈 셋(.6 · 1 · 3)인 폰처럼 버튼 줄을 만들어 그려 봄
+        val a = ctl.get()
+        CameraActivity::class.java.getDeclaredField("presets").apply { isAccessible = true }.set(a, listOf(0.6f, 1f, 3f))
+        CameraActivity::class.java.getDeclaredMethod("rebuildZoomRow").apply { isAccessible = true }.invoke(a)
+        CameraActivity::class.java.getDeclaredMethod("updateZoomLabels", Float::class.java).apply { isAccessible = true }.invoke(a, 1.4f)
+        drawAll(a)
+        org.junit.Assert.assertNotNull(findByText(a.window.decorView, "1.4×"))
+        org.junit.Assert.assertNotNull(findByText(a.window.decorView, ".6"))
+        org.junit.Assert.assertNotNull(findByText(a.window.decorView, "3"))
     }
 
     private fun waitReady(a: MainActivity) {

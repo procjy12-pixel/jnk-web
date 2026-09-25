@@ -276,6 +276,24 @@ class LutTest {
         assertTrue(s.contains("Caused by"))
     }
 
+    @Test fun lensPresetsPerPhone() {
+        // 광각 · 기본 · 망원 세 렌즈
+        val main = Lenses.Lens(6.3f, 9.8f, 7.4f)                     // 환산 약 22mm
+        val wide = Lenses.Lens(2.2f, 5.6f, 4.2f)                     // 환산 약 13.6mm
+        val tele = Lenses.Lens(7.4f, 4.4f, 3.3f)                     // 환산 약 58mm
+        val three = Lenses.presets(main, listOf(wide, tele), 0.6f, 30f)
+        assertEquals(3, three.size)
+        assertEquals(0.6f, three[0], 0.05f); assertEquals(1f, three[1], 0.01f)
+        // 렌즈 정보가 없고 최소 줌만 0.6 → 광각 + 기본
+        assertEquals(listOf(0.6f, 1f), Lenses.presets(null, emptyList(), 0.6f, 10f))
+        // 렌즈 하나 → 1× 만
+        assertEquals(listOf(1f), Lenses.presets(main, emptyList(), 1f, 8f))
+        // 광각 정보와 최소 줌이 둘 다 있으면 하나로
+        assertEquals(2, Lenses.presets(main, listOf(wide), 0.6f, 10f).size)
+        assertEquals(".6", Lenses.label(0.6f)); assertEquals("3", Lenses.label(3f)); assertEquals("1.5", Lenses.label(1.5f))
+        assertEquals(3f, Lenses.tidy(2.9f), 0.001f)
+    }
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

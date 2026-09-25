@@ -94,6 +94,9 @@ class CameraActivity : ComponentActivity() {
     private lateinit var lutRow: LinearLayout
     private lateinit var evSeek: SeekBar
     private lateinit var evText: TextView
+    private lateinit var zoomRow: LinearLayout
+    private val zoomButtons = ArrayList<Pair<Float, TextView>>()
+    private var presets: List<Float> = listOf(1f)
 
     private val orange = Color.parseColor("#E8743B")
     private val soft = Color.parseColor("#DDDDDD")
@@ -234,6 +237,7 @@ class CameraActivity : ComponentActivity() {
             toast("카메라를 열 수 없습니다: ${e.message}"); null
         }
         setupExposure()
+        setupLenses()
         CrashReport.step(this, "camera:bound")
     }
 
@@ -304,6 +308,82 @@ class CameraActivity : ComponentActivity() {
     private fun updateStatus() {
         if (cameraError != null) return
         status.text = if (pending > 0) "저장 중 $pending" else "${cur.lutName} · ${cur.frame.label}"
+    }
+
+    /**
+     * 이 폰(이 방향)의 렌즈를 읽어 배율 버튼을 만듭니다.
+     * 삼성처럼 여러 렌즈를 하나의 카메라로 묶어 주는 폰은 줌 배율만 바꾸면 렌즈가 알아서 바뀝니다.
+     */
+    @androidx.annotation.OptIn(markerClass = [androidx.camera.camera2.interop.ExperimentalCamera2Interop::class])
+    private fun setupLenses() {
+        val c = camera ?: return
+        val z = c.cameraInfo.zoomState.value
+        val minZ = z?.minZoomRatio ?: 1f
+        val maxZ = z?.maxZoomRatio ?: 1f
+        var main: Lenses.Lens? = null
+        val others = ArrayList<Lenses.Lens>()
+        try {
+            val cm = getSystemService(android.hardware.camera2.CameraManager::class.java)
+            val id = androidx.camera.camera2.interop.Camera2CameraInfo.from(c.cameraInfo).cameraId
+            fun lensOf(ch: android.hardware.camera2.CameraCharacteristics): Lenses.Lens? {
+                val f = ch.get(android.hardware.camera2.CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS)?.minOrNull() ?: return null
+                val sz = ch.get(android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE) ?: return null
+                return Lenses.Lens(f, sz.width, sz.height)
+            }
+            val ch = cm.getCameraCharacteristics(id)
+            main = lensOf(ch)
+            val facing = ch.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+            val ids = LinkedHashSet<String>()
+            if (android.os.Build.VERSION.SDK_INT >= 28) ids += ch.physicalCameraIds
+            for (other in cm.cameraIdList) {
+                if (other == id) continue
+                val oc = runCatching { cm.getCameraCharacteristics(other) }.getOrNull() ?: continue
+                if (oc.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) == facing) ids += other
+            }
+            for (pid in ids) runCatching { lensOf(cm.getCameraCharacteristics(pid)) }.getOrNull()?.let { others += it }
+        } catch (e: Throwable) { /* 렌즈 정보를 못 읽으면 줌 범위로만 */ }
+        presets = Lenses.presets(main, others, minZ, maxZ)
+        rebuildZoomRow()
+        c.cameraInfo.zoomState.removeObservers(this)
+        c.cameraInfo.zoomState.observe(this) { st -> updateZoomLabels(st.zoomRatio) }
+    }
+
+    private fun rebuildZoomRow() {
+        zoomRow.removeAllViews(); zoomButtons.clear()
+        zoomRow.visibility = if (presets.size <= 1) View.GONE else View.VISIBLE
+        for (r in presets) {
+            val b = TextView(this).apply {
+                gravity = Gravity.CENTER
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                setOnClickListener {
+                    runCatching { camera?.cameraControl?.setZoomRatio(r) }
+                    view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+            }
+            zoomRow.addView(b, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(4); rightMargin = dp(4) })
+            zoomButtons += r to b
+        }
+        updateZoomLabels(camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: 1f)
+    }
+
+    /** 지금 배율에 해당하는 렌즈 버튼을 밝히고, 그 버튼에 실제 배율(1.4× 등)을 표시 */
+    private fun updateZoomLabels(z: Float) {
+        if (zoomButtons.isEmpty()) return
+        val active = zoomButtons.lastOrNull { it.first <= z * 1.02f } ?: zoomButtons.first()
+        for ((r, b) in zoomButtons) {
+            val on = b === active.second
+            b.text = if (on) {
+                if (kotlin.math.abs(z - r) < 0.05f) Lenses.label(r) + "×"
+                else (if (z < 1f) "." + (z * 10).roundToInt() else String.format("%.1f", z)) + "×"
+            } else Lenses.label(r)
+            b.setTextColor(if (on) orange else Color.WHITE)
+            b.textSize = if (on) 13f else 11f
+            b.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (on) 0xCC000000.toInt() else 0x66000000)
+            }
+        }
     }
 
     private fun setupExposure() {
@@ -413,6 +493,15 @@ class CameraActivity : ComponentActivity() {
         stage.addView(focusRing, FrameLayout.LayoutParams(dp(64), dp(64)))
         flashCover = View(this).apply { setBackgroundColor(Color.WHITE); alpha = 0f }
         stage.addView(flashCover, -1, -1)
+        // 렌즈(배율) 버튼: 폰에 있는 렌즈만큼 (.6 · 1 · 3 처럼), 하나뿐이면 숨김
+        zoomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(6), dp(4), dp(6), dp(4))
+            background = GradientDrawable().apply { cornerRadius = dp(26).toFloat(); setColor(0x33000000) }
+            visibility = View.GONE
+        }
+        stage.addView(zoomRow, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(14) })
 
         val zoomer = ScaleGestureDetector(this, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
             override fun onScale(d: ScaleGestureDetector): Boolean {
