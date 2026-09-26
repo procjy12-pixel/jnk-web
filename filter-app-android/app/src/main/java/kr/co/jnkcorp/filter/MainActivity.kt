@@ -47,7 +47,7 @@ import kotlin.math.roundToInt
 class MainActivity : Activity() {
 
     /** 아래쪽 탭. 탭마다 사진 위 손가락 동작도 달라집니다. */
-    private enum class Mode { FILTER, MASK, HEAL, TEXT, MAKER }
+    private enum class Mode { FILTER, MASK, TEXT, MAKER }
 
     private val bg = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -57,7 +57,6 @@ class MainActivity : Activity() {
     private var sourceUri: Uri? = null
     private var captureUri: Uri? = null
     private var previewFull: Bitmap? = null   // 자르기 전 미리보기
-    private var healedFull: Bitmap? = null    // 잡티를 지운 미리보기 (없으면 previewFull)
     private var preview: Bitmap? = null       // 프레임으로 자른 미리보기
     private var previewPx: IntArray? = null
     private var thumbPx: IntArray? = null
@@ -97,16 +96,7 @@ class MainActivity : Activity() {
 
     private var renderGen = 0
 
-    // 잡티
-    private val spots = ArrayList<Spot>()
-    private var healSize = 0.015f
-    private var healFeather = 0.5f
-    // 잡티 되돌리기·다시하기: 작업 한 번(톡 한 번, 자동 한 번, 모두 지우기)마다 이전 목록을 기억
-    private val healUndo = ArrayList<List<Spot>>()
-    private val healRedo = ArrayList<List<Spot>>()
-    private lateinit var ring: RingView
-    private var healMulti = false
-    private var sensitivity = 0.5f
+    private var touchMulti = false   // 이번 터치에 두 번째 손가락이 닿았는지
 
     // 마스크 레이어
     private val layers = ArrayList<Layer>()
@@ -130,8 +120,6 @@ class MainActivity : Activity() {
     private lateinit var canvasBox: FrameLayout // image + overlay, 확대는 이걸 통째로
     private lateinit var maskScroll: ScrollView
     private lateinit var maskPanel: LinearLayout
-    private lateinit var healScroll: ScrollView
-    private lateinit var healPanel: LinearLayout
     private lateinit var tabMask: TextView
     private lateinit var tabText: TextView
     private lateinit var textScroll: ScrollView
@@ -139,7 +127,6 @@ class MainActivity : Activity() {
     private lateinit var wmView: WatermarkView
     private lateinit var autoBtn: TextView
     private var watermark = Watermark()
-    private lateinit var tabHeal: TextView
     private lateinit var hint: TextView
     private lateinit var frameRow: LinearLayout
     private lateinit var categoryRow: LinearLayout
@@ -347,8 +334,6 @@ class MainActivity : Activity() {
             photoRect = { this@MainActivity.photoRect() }  // 이름이 같아 자기 자신을 부르지 않게
         }
         canvasBox.addView(wmView, -1, -1)
-        ring = RingView(this)
-        canvasBox.addView(ring, -1, -1)
         hint = TextView(this).apply {
             text = "‘촬영’ 또는 ‘열기’로 사진을 고르세요\n\n누르고 있으면 원본 · 두 손가락으로 확대"
             setTextColor(dim)
@@ -378,12 +363,11 @@ class MainActivity : Activity() {
                 main.removeCallbacks(showOriginal)
                 showFiltered()
                 cancelStroke()
-                healMulti = true
-                ring.hide()
+                touchMulti = true
                 canvasBox.animate().cancel()
                 focusStartX = d.focusX; focusStartY = d.focusY
                 if (toolMode()) {
-                    // 마스크·잡티: 확대를 유지하고 두 손가락으로 옮겨 다니기 (기준점은 왼쪽 위로 고정)
+                    // 마스크: 확대를 유지하고 두 손가락으로 옮겨 다니기 (기준점은 왼쪽 위로 고정)
                     canvasBox.pivotX = 0f; canvasBox.pivotY = 0f
                 } else {
                     canvasBox.pivotX = d.focusX; canvasBox.pivotY = d.focusY
@@ -420,28 +404,20 @@ class MainActivity : Activity() {
             if (mode == Mode.TEXT && preview != null) { watermarkTouch(e); return@setOnTouchListener true }
             scaler.onTouchEvent(e)
             val painting = mode == Mode.MASK && layers.getOrNull(activeLayer) != null && preview != null
-            val healing = mode == Mode.HEAL && preview != null
-            if (painting || healing) {
-                // 한 손가락 = 칠하기/잡티 지우기, 두 손가락 = 확대·이동 (확대는 유지)
+            if (painting) {
+                // 한 손가락 = 칠하기, 두 손가락 = 확대·이동 (확대는 유지)
                 when (e.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
-                        downX = e.x; downY = e.y; lastX = e.x; lastY = e.y; dragging = false; healMulti = false
-                        if (painting) beginStroke(e.x, e.y)
-                        if (healing) showHealRing(e.x, e.y)
+                        downX = e.x; downY = e.y; lastX = e.x; lastY = e.y; dragging = false; touchMulti = false
+                        beginStroke(e.x, e.y)
                     }
-                    MotionEvent.ACTION_POINTER_DOWN -> { healMulti = true; ring.hide() }
-                    MotionEvent.ACTION_MOVE -> if (e.pointerCount == 1 && !zooming && !healMulti) {
+                    MotionEvent.ACTION_POINTER_DOWN -> touchMulti = true
+                    MotionEvent.ACTION_MOVE -> if (e.pointerCount == 1 && !zooming && !touchMulti) {
                         if (hypot(e.x - downX, e.y - downY) > slop) dragging = true
-                        if (painting && strokeLayer != null) { continueStroke(lastX, lastY, e.x, e.y); lastX = e.x; lastY = e.y }
-                        if (healing) showHealRing(e.x, e.y)   // 원을 보며 위치를 맞추고, 뗀 곳을 지움
+                        if (strokeLayer != null) { continueStroke(lastX, lastY, e.x, e.y); lastX = e.x; lastY = e.y }
                     }
-                    MotionEvent.ACTION_UP -> {
-                        if (painting) endStroke()
-                        if (healing && !zooming && !healMulti) addSpot(e.x, e.y)
-                        if (healing) main.postDelayed({ ring.hide() }, 500)
-                        zooming = false
-                    }
-                    MotionEvent.ACTION_CANCEL -> { cancelStroke(); ring.hide(); zooming = false }
+                    MotionEvent.ACTION_UP -> { endStroke(); zooming = false }
+                    MotionEvent.ACTION_CANCEL -> { cancelStroke(); zooming = false }
                 }
                 return@setOnTouchListener true
             }
@@ -486,10 +462,9 @@ class MainActivity : Activity() {
         }
         tabFilter = tab("LUT") { setMode(Mode.FILTER) }
         tabMask = tab("마스크") { setMode(Mode.MASK) }
-        tabHeal = tab("잡티") { setMode(Mode.HEAL) }
         tabText = tab("글자") { setMode(Mode.TEXT) }
         tabMaker = tab("만들기") { setMode(Mode.MAKER) }
-        for (t in listOf(tabFilter, tabMask, tabHeal, tabText, tabMaker)) tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
+        for (t in listOf(tabFilter, tabMask, tabText, tabMaker)) tabs.addView(t, LinearLayout.LayoutParams(0, -2, 1f))
         root.addView(tabs)
 
         val bottom = FrameLayout(this)
@@ -537,21 +512,16 @@ class MainActivity : Activity() {
         makerScroll.addView(makerPanel)
         bottom.addView(makerScroll, -1, -1)
 
-        // 마스크 · 잡티 패널
+        // 마스크 패널
         maskScroll = ScrollView(this).apply { visibility = View.GONE }
         maskPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
         maskScroll.addView(maskPanel)
         bottom.addView(maskScroll, -1, -1)
-        healScroll = ScrollView(this).apply { visibility = View.GONE }
-        healPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
-        healScroll.addView(healPanel)
-        bottom.addView(healScroll, -1, -1)
         textScroll = ScrollView(this).apply { visibility = View.GONE }
         textPanel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, 0, 0, dp(16)) }
         textScroll.addView(textPanel)
         bottom.addView(textScroll, -1, -1)
         rebuildMaskPanel()
-        rebuildHealPanel()
         rebuildTextPanel()
 
         root.addView(bottom, LinearLayout.LayoutParams(-1, dp(360)))
@@ -574,7 +544,6 @@ class MainActivity : Activity() {
         mode = m
         filterPanel.visibility = if (m == Mode.FILTER) View.VISIBLE else View.GONE
         maskScroll.visibility = if (m == Mode.MASK) View.VISIBLE else View.GONE
-        healScroll.visibility = if (m == Mode.HEAL) View.VISIBLE else View.GONE
         makerScroll.visibility = if (m == Mode.MAKER) View.VISIBLE else View.GONE
         textScroll.visibility = if (m == Mode.TEXT) View.VISIBLE else View.GONE
         styleTab(tabText, m == Mode.TEXT)
@@ -582,15 +551,13 @@ class MainActivity : Activity() {
         wmView.invalidate()
         styleTab(tabFilter, m == Mode.FILTER)
         styleTab(tabMask, m == Mode.MASK)
-        styleTab(tabHeal, m == Mode.HEAL)
         styleTab(tabMaker, m == Mode.MAKER)
         updateOverlay()
         if (!toolMode()) resetZoom()
-        ring.hide()
         if (wasMaker != makerMode || lastRender == null) render()
     }
 
-    private fun toolMode() = mode == Mode.MASK || mode == Mode.HEAL
+    private fun toolMode() = mode == Mode.MASK
 
     /** 확대를 풀고 원래 크기로 */
     private fun resetZoom() {
@@ -613,15 +580,6 @@ class MainActivity : Activity() {
         val z = canvasBox.scaleX
         val px = canvasBox.pivotX; val py = canvasBox.pivotY
         return floatArrayOf((x - canvasBox.translationX - px) / z + px, (y - canvasBox.translationY - py) / z + py)
-    }
-
-    private fun showHealRing(x: Float, y: Float) {
-        val p = preview ?: return
-        val full = baseFull() ?: return
-        val c = toContent(x, y)
-        val sDisp = min(image.width.toFloat() / p.width, image.height.toFloat() / p.height)
-        val r = healSize * max(full.width, full.height) * sDisp
-        ring.show(c[0], c[1], r * (1f - 0.6f * healFeather), r * (1.1f + 0.5f * healFeather), canvasBox.scaleX)
     }
 
     private fun rebuildFrames() {
@@ -1011,10 +969,9 @@ class MainActivity : Activity() {
             main.post {
                 if (bmp == null) { hint.text = "사진을 열 수 없습니다"; return@post }
                 previewFull = bmp
-                healedFull = null
-                spots.clear(); layers.clear(); activeLayer = -1; maskUndo = null
-                healUndo.clear(); healRedo.clear(); resetZoom()
-                rebuildMaskPanel(); rebuildHealPanel()
+                layers.clear(); activeLayer = -1; maskUndo = null
+                resetZoom()
+                rebuildMaskPanel()
                 transfer = null
                 hint.visibility = View.GONE
                 rebuildMaker()
@@ -1114,7 +1071,7 @@ class MainActivity : Activity() {
         return Region(b[0], b[1], full.width, full.height)
     }
 
-    private fun baseFull(): Bitmap? = healedFull ?: previewFull
+    private fun baseFull(): Bitmap? = previewFull
 
     /** 미리보기를 다시 그립니다. 연달아 불리면 마지막 것만 그립니다. */
     private fun render() {
@@ -1154,7 +1111,6 @@ class MainActivity : Activity() {
         val grade = currentGrade()
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
         val f = frame; val flip = frameFlip; val cx = cropX; val cy = cropY
-        val healList = spots.toList()
         val wm = watermark
         if (!makerMode) { store.pushRecent(currentSettings()); rebuildRecent() }
         store.current = currentSettings()
@@ -1166,17 +1122,8 @@ class MainActivity : Activity() {
                 val b = cropBox(fw, fh, f, flip, cx, cy)
                 val w = b[2]; val h = b[3]
                 val px = IntArray(w * h)
-                if (healList.isEmpty()) {
-                    full.getPixels(px, 0, w, b[0], b[1], w, h)
-                    full.recycle()
-                } else {
-                    // 잡티는 자르기 전 전체에서 지워야 가장자리 잡티도 자연스럽게 메워짐
-                    val all = IntArray(fw * fh)
-                    full.getPixels(all, 0, fw, 0, 0, fw, fh)
-                    full.recycle()
-                    AutoFix.heal(all, fw, fh, healList)
-                    for (y in 0 until h) System.arraycopy(all, (y + b[1]) * fw + b[0], px, y * w, w)
-                }
+                full.getPixels(px, 0, w, b[0], b[1], w, h)
+                full.recycle()
                 val scale = max(w, h).toFloat() / max(prev.width, prev.height)
                 Pipeline.process(px, w, h, grade, scale, Region(b[0], b[1], fw, fh))
                 val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -1226,7 +1173,7 @@ class MainActivity : Activity() {
         return IntArray(sw.width * sw.height).also { sw.getPixels(it, 0, sw.width, 0, 0, sw.width, sw.height) }
     }
 
-    // ───────────────────────── 마스크 · 잡티 ─────────────────────────
+    // ───────────────────────── 마스크 ─────────────────────────
 
     private var strokeLayer: Layer? = null
     private var strokeBefore: Mask? = null
@@ -1364,103 +1311,6 @@ class MainActivity : Activity() {
         slider(maskPanel, "채도", -1f, 1f, p.saturation, ::signedPct) { p.saturation = it; render() }
         slider(maskPanel, "색온도", -1f, 1f, p.temperature, ::signedPct) { p.temperature = it; render() }
         slider(maskPanel, "틴트", -1f, 1f, p.tint, ::signedPct) { p.tint = it; render() }
-    }
-
-    private fun addSpot(x: Float, y: Float) {
-        val uv = toFull(x, y) ?: return
-        if (uv[0] !in 0f..1f || uv[1] !in 0f..1f) return
-        pushHealHistory()
-        spots += Spot(uv[0], uv[1], healSize, feather = healFeather)
-        rebuildHeal()
-    }
-
-    private fun autoHeal() {
-        val full = previewFull ?: run { toast("먼저 사진을 여세요"); return }
-        val sens = sensitivity
-        toast("잡티를 찾는 중…")
-        bg.execute {
-            val px = pixels(full)
-            // 얼굴을 찾아 눈·눈썹·코·입은 빼고 얼굴 피부에서만 찾음
-            val face = FaceGuard.detect(full)
-            val allowed = face?.allowedMask(full.width, full.height)
-            val found = if (face == null) emptyList()
-                else AutoFix.detectBlemishes(px, full.width, full.height, sens, allowed, face.width)
-            main.post {
-                if (face != null) pushHealHistory()
-                spots.removeAll { it.auto }
-                spots.addAll(found)
-                rebuildHeal()
-                toast(when {
-                    face == null -> "얼굴을 찾지 못했어요 · 자동은 얼굴 사진에서만, 나머지는 톡 눌러 지워 주세요"
-                    found.isEmpty() -> "지울 잡티를 못 찾았어요 · 민감도를 올려 보세요"
-                    else -> "잡티 ${found.size}개를 지웠어요 (눈·코·입은 건드리지 않음)"
-                })
-            }
-        }
-    }
-
-    /** 잡티 목록이 바뀌면 미리보기 원본을 다시 만듭니다. */
-    private fun rebuildHeal() {
-        rebuildHealPanel()
-        val full = previewFull ?: return
-        val list = spots.toList()
-        if (list.isEmpty()) { healedFull = null; applyFrame(); return }
-        bg.execute {
-            val px = pixels(full)
-            AutoFix.heal(px, full.width, full.height, list)
-            val out = Bitmap.createBitmap(px, full.width, full.height, Bitmap.Config.ARGB_8888)
-            main.post { if (list.size == spots.size) { healedFull = out; applyFrame() } }
-        }
-    }
-
-    private fun pushHealHistory() {
-        healUndo += spots.toList()
-        if (healUndo.size > 50) healUndo.removeAt(0)
-        healRedo.clear()
-    }
-
-    private fun healUndoStep() {
-        val prev = healUndo.removeLastOrNull() ?: return
-        healRedo += spots.toList()
-        spots.clear(); spots.addAll(prev)
-        rebuildHeal()
-    }
-
-    private fun healRedoStep() {
-        val next = healRedo.removeLastOrNull() ?: return
-        healUndo += spots.toList()
-        spots.clear(); spots.addAll(next)
-        rebuildHeal()
-    }
-
-    private fun rebuildHealPanel() {
-        healPanel.removeAllViews()
-        // 되돌리기·다시하기는 맨 위에
-        val top = hRow()
-        top.addView(bigChip("↶ 되돌리기", false) { healUndoStep() }.apply { alpha = if (healUndo.isEmpty()) 0.4f else 1f })
-        top.addView(bigChip("↷ 다시하기", false) { healRedoStep() }.apply { alpha = if (healRedo.isEmpty()) 0.4f else 1f })
-        top.addView(smallChip("원래 크기", false) { resetZoom() })
-        top.addView(label("지운 잡티 ${spots.size}개", 12f, soft).apply { setPadding(dp(8), 0, 0, 0) })
-        healPanel.addView(scrollRow(top))
-
-        healPanel.addView(section("수동"))
-        healPanel.addView(label("한 손가락: 원을 보며 위치를 맞추고, 떼면 지워요\n두 손가락: 벌려서 확대 · 움직여서 이동 (확대는 유지돼요)", 11f, dim).apply {
-            gravity = Gravity.START; setPadding(dp(16), dp(2), dp(16), dp(2))
-        })
-        slider(healPanel, "크기", 0.003f, 0.06f, healSize, { String.format("%.1f", it * 100) }, def = 0.015f) { healSize = it }
-        slider(healPanel, "페더", 0f, 1f, healFeather, ::pct, def = 0.5f) { healFeather = it }
-
-        healPanel.addView(section("자동"))
-        healPanel.addView(label("얼굴을 찾아 볼·이마·턱 피부의 작고 옅은 점만 지워요\n눈·눈썹·코·입과 그 둘레는 건드리지 않아요", 11f, dim).apply {
-            gravity = Gravity.START; setPadding(dp(16), dp(2), dp(16), dp(2))
-        })
-        val auto = hRow()
-        auto.addView(pill("잡티 자동 제거", filled = true) { autoHeal() })
-        auto.addView(smallChip("모두 지우기", false) { if (spots.isNotEmpty()) { pushHealHistory(); spots.clear(); rebuildHeal() } }.apply {
-            (layoutParams as LinearLayout.LayoutParams).leftMargin = dp(8)
-        })
-        healPanel.addView(scrollRow(auto))
-        slider(healPanel, "민감도", 0f, 1f, sensitivity, ::pct, def = 0.5f) { sensitivity = it }
     }
 
     /** 색온도·틴트 자동: 지금 LUT 를 입힌 결과에서 색 치우침을 재서 맞춥니다. */

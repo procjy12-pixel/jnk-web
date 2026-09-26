@@ -148,94 +148,9 @@ class LutTest {
         assertEquals(0x80, px[10 * 20 + 10] and 0xFF)
     }
 
-    private fun skinImage(w: Int, h: Int): IntArray {
-        val rnd = java.util.Random(1)
-        return IntArray(w * h) {
-            val n = rnd.nextInt(7) - 3
-            (0xFF shl 24) or ((215 + n) shl 16) or ((170 + n) shl 8) or (145 + n)
-        }
-    }
 
-    private fun darkDot(px: IntArray, w: Int, cx: Int, cy: Int, r: Int, color: Int = 0xFF7A4A3A.toInt()) {
-        for (y in cy - r..cy + r) for (x in cx - r..cx + r)
-            if ((x - cx) * (x - cx) + (y - cy) * (y - cy) <= r * r) px[y * w + x] = color
-    }
 
-    private fun ellipse(px: IntArray, w: Int, cx: Int, cy: Int, rx: Int, ry: Int, color: Int) {
-        for (y in cy - ry..cy + ry) for (x in cx - rx..cx + rx) {
-            val dx = (x - cx).toFloat() / rx; val dy = (y - cy).toFloat() / ry
-            if (dx * dx + dy * dy <= 1f) px[y * w + x] = color
-        }
-    }
 
-    /** 실제 잡티처럼 주변보다 조금만 어두운 색 */
-    private val mild = 0xFFB4826C.toInt()
-
-    @Test fun detectsAndHealsBlemish() {
-        val w = 800; val h = 600
-        val px = skinImage(w, h)
-        darkDot(px, w, 250, 300, 2, mild)
-        darkDot(px, w, 550, 150, 4, mild)
-        val spots = AutoFix.detectBlemishes(px, w, h, 0.5f)
-        assertEquals("점 두 개를 찾아야 함", 2, spots.size)
-        AutoFix.heal(px, w, h, spots)
-        for ((x, y) in listOf(250 to 300, 550 to 150)) {
-            val c = px[y * w + x]
-            assertTrue("지운 자리는 피부색이어야 함: ${Integer.toHexString(c)}", ((c shr 16) and 0xFF) > 200)
-        }
-    }
-
-    /** 가짜 얼굴: 눈·눈썹·콧구멍·입술은 그대로, 볼의 잡티 하나만 찾아야 함 */
-    @Test fun faceFeaturesAreNeverBlemishes() {
-        val w = 600; val h = 700
-        val px = skinImage(w, h)
-        val eye = 0xFF281E1E.toInt(); val brow = 0xFF6E4B3C.toInt(); val nostril = 0xFFAA7864.toInt(); val lip = 0xFFB45A5A.toInt()
-        ellipse(px, w, 200, 280, 28, 10, eye); ellipse(px, w, 400, 280, 28, 10, eye)          // 눈
-        ellipse(px, w, 200, 240, 36, 5, brow); ellipse(px, w, 400, 240, 36, 5, brow)          // 눈썹
-        ellipse(px, w, 285, 400, 5, 4, nostril); ellipse(px, w, 315, 400, 5, 4, nostril)      // 콧구멍
-        ellipse(px, w, 300, 480, 45, 12, lip)                                                  // 입술
-        darkDot(px, w, 170, 420, 3, mild)                                                      // 볼 잡티
-
-        // 얼굴 인식 없이도: 눈·눈썹·입술은 절대 안 잡힘
-        val noFace = AutoFix.detectBlemishes(px, w, h, 1f)
-        for (sp in noFace) {
-            val x = sp.u * w; val y = sp.v * h
-            assertTrue("눈·눈썹을 잡티로 봄: ($x,$y)", y !in 225f..295f)
-            assertTrue("입술을 잡티로 봄: ($x,$y)", !(y in 465f..495f && x in 250f..350f))
-        }
-
-        // 얼굴 윤곽 + 보호 영역이 있으면 볼 잡티 하나만
-        val oval = (0 until 36).map { val t = it * Math.PI * 2 / 36; floatArrayOf((300 + 230 * Math.cos(t)).toFloat(), (380 + 300 * Math.sin(t)).toFloat()) }
-        fun box(cx: Float, cy: Float, rx: Float, ry: Float) = listOf(
-            floatArrayOf(cx - rx, cy - ry), floatArrayOf(cx + rx, cy - ry), floatArrayOf(cx + rx, cy + ry), floatArrayOf(cx - rx, cy + ry))
-        val face = FaceRegions(oval, listOf(
-            box(200f, 280f, 28f, 10f), box(400f, 280f, 28f, 10f), box(200f, 240f, 36f, 5f), box(400f, 240f, 36f, 5f),
-            box(300f, 395f, 25f, 20f), box(300f, 480f, 45f, 12f)))
-        val allowed = face.allowedMask(w, h)
-        assertTrue("볼은 찾아도 되는 곳", allowed[420 * w + 170])
-        assertTrue("눈은 보호", !allowed[280 * w + 200])
-        assertTrue("콧구멍은 보호", !allowed[400 * w + 285])
-        val found = AutoFix.detectBlemishes(px, w, h, 1f, allowed, face.width)
-        assertEquals("볼 잡티 하나만: ${found.map { it.u * w to it.v * h }}", 1, found.size)
-        assertEquals(170f, found[0].u * w, 3f); assertEquals(420f, found[0].v * h, 3f)
-    }
-
-    @Test fun manualHealRemovesDot() {
-        val w = 200; val h = 200
-        val px = skinImage(w, h)
-        darkDot(px, w, 100, 100, 5)
-        AutoFix.heal(px, w, h, listOf(Spot(0.5f, 0.5f, 8f / 200)))
-        val c = px[100 * w + 100]
-        assertTrue(((c shr 16) and 0xFF) > 200)
-    }
-
-    @Test fun noBlemishesOnProductPhotoColors() {
-        // 피부색이 아닌 곳(파란 옷 위의 어두운 점)은 건드리지 않음
-        val w = 200; val h = 200
-        val px = IntArray(w * h) { 0xFF2040A0.toInt() }
-        for (y in 98..102) for (x in 98..102) px[y * w + x] = 0xFF101830.toInt()
-        assertEquals(0, AutoFix.detectBlemishes(px, w, h, 1f).size)
-    }
 
     @Test fun autoWhiteBalanceCorrectsBlueCast() {
         val px = IntArray(1000) { 0xFF7080A0.toInt() }   // 파랗게 뜬 회색
@@ -292,19 +207,6 @@ class LutTest {
         assertEquals(2, Lenses.presets(main, listOf(wide), 0.6f, 10f).size)
         assertEquals(".6", Lenses.label(0.6f)); assertEquals("3", Lenses.label(3f)); assertEquals("1.5", Lenses.label(1.5f))
         assertEquals(3f, Lenses.tidy(2.9f), 0.001f)
-    }
-
-    @Test fun featherControlsEdge() {
-        val w = 200; val h = 200
-        fun run(feather: Float): Int {
-            val px = skinImage(w, h)
-            darkDot(px, w, 100, 100, 12, mild)   // 반경 12 점, 지우개 반경 10 → 가장자리(11px)는 페더에 따라
-            AutoFix.heal(px, w, h, listOf(Spot(0.5f, 0.5f, 10f / 200, feather = feather)))
-            return (px[100 * w + 111] shr 16) and 0xFF
-        }
-        val hard = run(0f); val soft = run(1f)
-        assertTrue("페더 0 은 반경 밖을 거의 안 건드림(어두운 채): $hard", hard < 195)
-        assertTrue("페더 1 은 반경 밖까지 부드럽게 메움: $soft", soft > hard + 5)
     }
 
     @Test fun monoDetection() {

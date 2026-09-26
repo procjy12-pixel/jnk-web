@@ -47,29 +47,20 @@ object Gallery {
     }
 
     /**
-     * 원본 사진([uri])에 설정을 입혀 저장합니다: 잡티 → 자르기 → LUT·레이어·그레인·비네팅 → 워터마크.
+     * 원본 사진([uri])에 설정을 입혀 저장합니다: 자르기 → LUT·레이어·그레인·비네팅 → 워터마크.
      * [previewLong] 은 미리보기 긴 변 (그레인 굵기 맞추기용).
      */
     fun renderAndSave(
         ctx: Context, uri: Uri, grade: Grade, frame: Frame, flip: Boolean, cropX: Float, cropY: Float,
-        spots: List<Spot>, watermark: Watermark, tag: String, previewLong: Int,
+        watermark: Watermark, tag: String, previewLong: Int,
     ): Uri? {
         val full = decode(ctx, uri, FULL_MAX)
         val fw = full.width; val fh = full.height
         val b = cropBox(fw, fh, frame, flip, cropX, cropY)
         val w = b[2]; val h = b[3]
         val px = IntArray(w * h)
-        if (spots.isEmpty()) {
-            full.getPixels(px, 0, w, b[0], b[1], w, h)
-            full.recycle()
-        } else {
-            // 잡티는 자르기 전 전체에서 지워야 가장자리 잡티도 자연스럽게 메워짐
-            val all = IntArray(fw * fh)
-            full.getPixels(all, 0, fw, 0, 0, fw, fh)
-            full.recycle()
-            AutoFix.heal(all, fw, fh, spots)
-            for (y in 0 until h) System.arraycopy(all, (y + b[1]) * fw + b[0], px, y * w, w)
-        }
+        full.getPixels(px, 0, w, b[0], b[1], w, h)
+        full.recycle()
         val scale = max(w, h).toFloat() / max(1, previewLong)
         Pipeline.process(px, w, h, grade, scale, Region(b[0], b[1], fw, fh))
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)

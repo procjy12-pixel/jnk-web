@@ -291,7 +291,7 @@ class CameraActivity : ComponentActivity() {
                     if (uri == null) false else {
                         lastOriginal = uri
                         Gallery.renderAndSave(this@CameraActivity, uri, g, s.frame, s.frameFlip, s.cropX, s.cropY,
-                            emptyList(), wm, s.lutName, long)?.also { saved ->
+                            wm, s.lutName, long)?.also { saved ->
                             val small = Gallery.decode(this@CameraActivity, saved, 256)
                             runOnUiThread { thumb.setImageBitmap(small) }
                         } != null
