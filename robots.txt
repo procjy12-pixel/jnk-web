@@ -64,4 +64,21 @@ User-agent: Applebot-Extended
 Allow: /
 Disallow: /admin/
 
+# ── 추가 (2026-09-30): 검색·실시간 열람용 AI 봇과 Bing ──
+User-agent: Claude-SearchBot
+Allow: /
+Disallow: /admin/
+
+User-agent: Claude-User
+Allow: /
+Disallow: /admin/
+
+User-agent: Perplexity-User
+Allow: /
+Disallow: /admin/
+
+User-agent: Bingbot
+Allow: /
+Disallow: /admin/
+
 Sitemap: https://jnkcorp.co.kr/sitemap.xml
