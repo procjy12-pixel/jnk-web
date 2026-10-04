@@ -65,6 +65,21 @@
 <script src="/assets/js/count.js?v=2019622a" defer></script>
 </head>
 <body>
+<!-- 로그인 가림막 — 통과하기 전에는 화면에 아무것도 없습니다.
+     정적 사이트라 이 HTML 자체는 누구나 받을 수 있습니다. 그래서 이 파일 안에는
+     고객 정보를 한 글자도 두지 않고, 데이터는 로그인한 뒤에만 워커에서 받아 옵니다. -->
+<div id="gate" style="position:fixed;inset:0;z-index:99;background:var(--bg);display:grid;place-items:center;padding:24px">
+  <div style="width:100%;max-width:340px">
+    <div class="brand" style="justify-content:center"><span class="brand__mark">J&amp;K</span><span class="brand__sub">COMPANY<br>LIMITED</span></div>
+    <div style="margin-top:28px;text-align:center;font-size:13px;letter-spacing:.16em;font-weight:800;color:var(--red)">ADMIN</div>
+    <input class="in" id="gId" type="text" placeholder="아이디" autocomplete="username" style="margin-top:22px">
+    <input class="in" id="gPw" type="password" placeholder="비밀번호" autocomplete="current-password" style="margin-top:10px">
+    <button class="btn btn--red" id="gGo" type="button" style="margin-top:14px;width:100%">들어가기</button>
+    <p class="sm" id="gMsg" style="margin-top:14px;text-align:center;color:var(--tx-3);min-height:1.4em"></p>
+    <p class="sm" style="margin-top:18px;text-align:center;color:var(--tx-3);line-height:1.6">
+      고객 이름과 연락처가 보이는 화면입니다.<br>공용 컴퓨터에서는 쓰지 마세요.</p>
+  </div>
+</div>
 
 <header class="nav" id="nav">
   <a class="brand" href="/" aria-label="제이앤케이 홈">
@@ -140,12 +155,12 @@
       홈페이지 폼으로 들어온 문의가 메일과 <b>따로</b> 여기 쌓입니다.
       메일이 늦게 오거나 스팸함으로 빠져도 여기서 볼 수 있고, 문의가 정말 없었는지도 여기서 가립니다.
       <br><br>
-      <input class="in" id="inqKey" type="password" placeholder="어드민 비밀번호" autocomplete="off" style="max-width:240px;display:inline-block;vertical-align:middle">
-      <button class="btn" id="inqLoad" type="button" style="vertical-align:middle">불러오기</button>
+      <button class="btn" id="inqLoad" type="button" style="vertical-align:middle">새로 불러오기</button>
+      <button class="btn" id="gOut" type="button" style="vertical-align:middle;margin-left:8px">로그아웃</button>
       <span class="sm" id="inqMsg" style="margin-left:10px;color:var(--tx-3)"></span>
       <br><br>
-      <span class="sm" style="color:var(--tx-3)">비밀번호는 이 브라우저에만 저장됩니다.
-      고객 이름과 연락처가 보이는 화면이니 공용 컴퓨터에서는 쓰지 마세요.</span>
+      <span class="sm" style="color:var(--tx-3)">로그인 상태는 <b>이 탭에서만</b> 유지됩니다.
+      창을 닫으면 끝나고, 12시간이 지나면 다시 로그인해야 합니다.</span>
     </div>
   </div>
   <div id="inqBox" style="margin-top:18px"></div>
@@ -184,7 +199,7 @@
     </a>
     <a href="https://formsubmit.co/" target="_blank" rel="noopener">
       <div class="lnk__t">견적 문의 수신 (메일)</div>
-      <div class="lnk__x">문의는 <b>jnk@jnkcorp.co.kr</b> 으로 들어옵니다.<br>FormSubmit 은 <b>사이트 주소마다</b> 따로 활성화합니다. 주소가 바뀌면 활성화 메일이 다시 옵니다.</div>
+      <div class="lnk__x">문의는 <b>010-4823-1422</b> 으로 들어옵니다.<br>FormSubmit 은 <b>사이트 주소마다</b> 따로 활성화합니다. 주소가 바뀌면 활성화 메일이 다시 옵니다.</div>
       <span class="lnk__s s-off" id="sForm">jnkcorp.co.kr 활성화 필요</span>
     </a>
   </div>
@@ -218,7 +233,7 @@
   <h2>사람이 해야 하는 것</h2>
   <ul class="todo">
     <li><b>견적 폼 활성화 (jnkcorp.co.kr)</b> — 지금 제일 급합니다
-      <small>jnk@jnkcorp.co.kr 로 온 "Activate FormSubmit on https://jnkcorp.co.kr/" 메일의
+      <small>010-4823-1422 로 온 "Activate FormSubmit on https://jnkcorp.co.kr/" 메일의
       버튼을 한 번 누르면 됩니다. 누르기 전까지 홈페이지 문의는 메일로 오지 않고,
       손님에게는 "전송이 되지 않았습니다" 가 뜹니다.</small></li>
     <li><b>네이버 애널리틱스 등록번호 받기</b>
@@ -348,13 +363,65 @@
      폼 → 클라우드플레어 워커 → KV. 넥소와 같은 구조다.
      비밀번호 없이는 워커가 아무것도 돌려주지 않는다 — 고객 연락처가 들어 있기 때문이다. */
   (function () {
-    var LIST = 'https://jnk-inquiry.chlwodud2770.workers.dev/list?limit=100';
-    var SEEN = 'https://jnk-inquiry.chlwodud2770.workers.dev/seen';
-    var SAVED = 'jnk_admin_key';
+    var API  = 'https://jnk-inquiry.chlwodud2770.workers.dev';
+    var LIST = API + '/list?limit=100';
+    var SEEN = API + '/seen';
+    /* 토큰은 sessionStorage 에만 둡니다 — 창을 닫으면 사라집니다.
+       localStorage 에 두면 공용 컴퓨터에서 다음 사람이 그대로 들어옵니다. */
+    var SAVED = 'jnk_admin_tok';
+    function 토큰() { try { return sessionStorage.getItem(SAVED) || ''; } catch (e) { return ''; } }
+    function 토큰저장(v) { try { v ? sessionStorage.setItem(SAVED, v) : sessionStorage.removeItem(SAVED); } catch (e) {} }
+
+    function 잠그기(말) {
+      토큰저장('');
+      // 화면만 덮으면 개발자도구로 걷어내는 순간 표가 그대로 보입니다. 내용을 지웁니다.
+      var box = document.getElementById('inqBox'); if (box) box.innerHTML = '';
+      var kpi = document.getElementById('kpiInq'); if (kpi) { kpi.textContent = '—'; kpi.style.color = ''; }
+      var im = document.getElementById('inqMsg'); if (im) im.textContent = '';
+      document.title = '운영 대시보드 | 제이앤케이';
+      var g = document.getElementById('gate');
+      if (g) { g.style.display = 'grid'; }
+      var m = document.getElementById('gMsg');
+      if (m) m.textContent = 말 || '';
+      var pw = document.getElementById('gPw'); if (pw) pw.value = '';
+    }
+
+    function 로그인() {
+      var id = document.getElementById('gId').value.trim();
+      var pw = document.getElementById('gPw').value;
+      var msg = document.getElementById('gMsg');
+      var btn = document.getElementById('gGo');
+      if (!id || !pw) { msg.textContent = '아이디와 비밀번호를 넣어 주세요'; return; }
+      btn.disabled = true; msg.textContent = '확인 중…';
+      fetch(API + '/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: id, pw: pw }),
+      }).then(function (r) { return r.json().catch(function () { return null; }); })
+        .then(function (j) {
+          btn.disabled = false;
+          document.getElementById('gPw').value = '';
+          if (j && j.ok && j.token) {
+            토큰저장(j.token);
+            document.getElementById('gate').style.display = 'none';
+            msg.textContent = '';
+            불러오기();
+            return;
+          }
+          if (j && j.why === 'locked') {
+            msg.textContent = '시도가 많아 ' + (j.분 || 15) + '분 동안 잠겼습니다';
+          } else if (j && j.why === 'not-configured') {
+            msg.textContent = '서버에 로그인 설정이 없습니다';
+          } else {
+            // 아이디가 틀렸는지 비번이 틀렸는지 구분해 주지 않습니다
+            msg.textContent = '맞지 않습니다'
+              + (j && typeof j.남은시도 === 'number' ? ' · ' + j.남은시도 + '번 남았습니다' : '');
+          }
+        })
+        .catch(function () { btn.disabled = false; msg.textContent = '서버에 연결하지 못했습니다'; });
+    }
     var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
 
-    var 마지막키 = '';
 
     function 그리기(j) {
       var items = j.items || [];
@@ -398,36 +465,42 @@
           b.disabled = true; b.textContent = '…';
           fetch(SEEN, {
             method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-jnk-key': 마지막키 },
+            headers: { 'content-type': 'application/json', 'authorization': 'Bearer ' + 토큰() },
             body: JSON.stringify({ id: b.getAttribute('data-id'), 확인: b.getAttribute('data-on') !== '1' }),
           }).then(function (r) { return r.json(); })
-            .then(function (k) { if (k && k.ok) 불러오기(마지막키); else { b.disabled = false; b.textContent = '실패'; } })
+            .then(function (k) { if (k && k.ok) 불러오기(); else { b.disabled = false; b.textContent = '실패'; } })
             .catch(function () { b.disabled = false; b.textContent = '실패'; });
         });
       });
     }
 
-    function 불러오기(key) {
-      if (!key) { $('inqMsg').textContent = '비밀번호를 넣어 주세요'; return; }
+    function 불러오기() {
+      var tk = 토큰();
+      if (!tk) { 잠그기(''); return; }
       $('inqMsg').textContent = '불러오는 중…';
-      fetch(LIST, { headers: { 'x-jnk-key': key } })
-        .then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+      fetch(LIST, { headers: { 'authorization': 'Bearer ' + tk } })
+        .then(function (r) { return r.json().catch(function () { return null; })
+          .then(function (j) { return { s: r.status, j: j }; }); })
         .then(function (o) {
-          if (!o.j || o.j.ok !== true) { $('inqMsg').textContent = o.s === 401 ? '비밀번호가 다릅니다' : '불러오지 못했습니다'; return; }
-          try { localStorage.setItem(SAVED, key); } catch (e) {}
-          마지막키 = key;
+          if (o.s === 401) { 잠그기('로그인이 만료됐습니다. 다시 들어와 주세요.'); return; }
+          if (!o.j || o.j.ok !== true) { $('inqMsg').textContent = '불러오지 못했습니다'; return; }
           그리기(o.j);
         })
         .catch(function () { $('inqMsg').textContent = '원장에 연결하지 못했습니다'; });
     }
 
     ready(function () {
-      var saved = '';
-      try { saved = localStorage.getItem(SAVED) || ''; } catch (e) {}
-      if (saved) { $('inqKey').value = saved; 불러오기(saved); }
-      $('inqLoad').addEventListener('click', function () { 불러오기($('inqKey').value.trim()); });
-      $('inqKey').addEventListener('keydown', function (e) { if (e.key === 'Enter') 불러오기($('inqKey').value.trim()); });
-      setInterval(function () { if (마지막키 && !document.hidden) 불러오기(마지막키); }, 300000);
+      var 가림막 = document.getElementById('gate');
+      if (토큰()) { 가림막.style.display = 'none'; 불러오기(); }
+      document.getElementById('gGo').addEventListener('click', 로그인);
+      ['gId', 'gPw'].forEach(function (id) {
+        document.getElementById(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') 로그인(); });
+      });
+      document.getElementById('gOut').addEventListener('click', function () { 잠그기('로그아웃했습니다.'); });
+      $('inqLoad').addEventListener('click', function () { 불러오기(); });
+      setInterval(function () { if (토큰() && !document.hidden) 불러오기(); }, 300000);
+      // 옛 방식으로 브라우저에 남아 있던 열쇠는 지웁니다
+      try { localStorage.removeItem('jnk_admin_key'); } catch (e) {}
     });
   })();
 

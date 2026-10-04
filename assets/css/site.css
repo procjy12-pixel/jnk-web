@@ -448,7 +448,22 @@ body::after {
 .pick input:focus-visible + label { outline: 2px solid var(--red); outline-offset: 2px; }
 
 /* 수량 — 카드형 라디오 */
-.qty { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 15px; }
+/* 다품종 소량 — 보통 vs 우리 두 칸 비교 */
+.mix { display: grid; grid-template-columns: 1fr 1.25fr; gap: clamp(12px, 1.6vw, 20px);
+       margin-top: clamp(34px, 4.5vw, 54px); }
+.mix__col { padding: clamp(24px, 3vw, 38px); border-radius: 18px;
+            border: 1px solid var(--line); background: rgba(255,255,255,.02); }
+.mix__col--on { border-color: rgba(255,20,20,.42); background: rgba(255,20,20,.07); }
+.mix__k { font-size: 12.5px; font-weight: 800; letter-spacing: .16em; color: var(--tx-3); }
+.mix__col--on .mix__k { color: var(--red); }
+.mix__v { margin-top: 14px; font-size: clamp(19px, 2.1vw, 28px); font-weight: 800;
+          letter-spacing: -.035em; line-height: 1.35; }
+.mix__v--no { color: var(--tx-3); text-decoration: line-through; text-decoration-thickness: 2px; }
+.mix__x { margin-top: 14px; font-size: 15px; line-height: 1.72; color: var(--tx-2); }
+.mix__x b { color: #fff; font-weight: 700; }
+@media (max-width: 760px) { .mix { grid-template-columns: 1fr; } }
+
+.qty { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
 .qty input { position: absolute; opacity: 0; width: 0; height: 0; }
 .qty label {
   display: block; padding: 20px; border-radius: 14px; cursor: pointer;
@@ -463,12 +478,27 @@ body::after {
 .qty input:checked + label { border-color: var(--red); background: rgba(255,20,20,.09); }
 .qty input:checked + label .qty__v { color: var(--red); }
 .qty input:focus-visible + label { outline: 2px solid var(--red); outline-offset: 2px; }
+/* 잠긴 칸 — 조건을 채우기 전에는 못 누릅니다.
+   이름만 '과잠 전용' 이라고 써 놨더니 과잠이 아닌 사람도 눌렀습니다 (2026-10-04). */
+.qty input:disabled + label { opacity: .42; cursor: not-allowed; }
+.qty input:disabled + label:hover { border-color: var(--line-2); }
+.qty input:disabled + label:hover::before { opacity: 0; }
+.qty label .qty__b--lock { background: rgba(255,255,255,.14); color: var(--tx-2); }
+.qty input:not(:disabled) + label .qty__b--lock { background: var(--red); color: #fff; }
+.qty__note { margin-top: 14px; font-size: 13.5px; line-height: 1.7; color: var(--tx-3); }
+.qty__note b { color: var(--tx-2); font-weight: 700; }
+.qty__note.is-on { color: var(--red-2); }
+.qty__note.is-on b { color: var(--red-2); }
+.qty__note.is-up { color: var(--tx-2); }
+.qty__note.is-up b { color: #fff; }
+
 .qty label .qty__b {
   display: inline-block; margin-bottom: 8px; padding: 3px 9px; border-radius: 999px;
   background: var(--red); color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: .06em;
 }
 /* 칸이 셋이라 좁은 화면에서 2열로 두면 한 칸이 빕니다. 한 줄에 하나씩 쌓습니다. */
-@media (max-width: 900px) { .qty { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .qty { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 520px) { .qty { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .qty label { padding: 16px 20px; } }
 
 .in {

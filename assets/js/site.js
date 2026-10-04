@@ -32,7 +32,9 @@
      ══════════════════════════════════════════════════════════ */
   // ⚠️ 주소를 바꾸면 FormSubmit 활성화 메일이 새 주소로 다시 옵니다. 눌러야 들어옵니다.
   // 2026-09-24 대표님: "J&K 문의는 모두 info 이 메일로만." 한 곳으로만 보냅니다.
-  const RECEIVER = 'info@frameofframe.com';      // 폼 문의가 도착하는 곳 · 실패 시 메일 버튼도 이 주소
+  // 2026-10-04: 사이트에서 메일 주소를 전부 뺐습니다. 고객이 메일로 바로 쓰지 못하게 하고
+  // 문의는 폼 한 길로만 받습니다. 이 주소는 받는 쪽일 뿐 화면에 나오지 않습니다.
+  const RECEIVER = 'info@frameofframe.com';      // 폼 문의가 도착하는 곳
   const ENDPOINT = 'https://formsubmit.co/ajax/' + RECEIVER;
   // 메일을 한 곳에만 걸어 두면 그 한 곳이 막히는 날 문의가 통째로 사라집니다.
   // 그 위험은 아래 원장이 받습니다 — 메일과 별개로 한 건씩 남으니 메일이 새도 기록은 남습니다.
@@ -290,6 +292,33 @@
   const val = (id) => ($(id)?.value || '').trim();
   const checked = (name) => $$(`input[name="${name}"]:checked`).map((i) => i.value);
 
+  /* ── 수량 구간을 고르면 그 구간의 사실을 바로 말해 줍니다 ──
+     200~500 은 국내와 비용이 비슷합니다. 그걸 숨기지 않고 그 자리에서 알려 줍니다.
+     잘못된 문의가 줄고, 불리한 말도 하는 곳이라는 인상이 남습니다. */
+  const 수량메모 = $('#qtyNote');
+  const 기본메모 = 수량메모 ? 수량메모.innerHTML : '';
+  const 구간말 = {
+    '200~499장': ['', '이 구간은 <b>국내 생산과 비용이 비슷합니다.</b> 급하시면 국내로 가셔도 됩니다 — ' +
+      '그래도 저희가 나은 점은 품목을 잘게 나눌 수 있다는 것입니다.'],
+    '500~999장': ['is-up', '여기서부터 운임까지 포함해 <b>국내보다 20~30% 낮아집니다.</b> 사양에 따라 폭은 달라집니다.'],
+    '1,000~2,999장': ['is-up', '<b>국내 납품 업체 중 최저가 수준</b>입니다.'],
+    '3,000장 이상 (대량)': ['is-up', '4개국 라인으로 나눠 태웁니다. <b>국내 납품 업체 중 최저가 수준</b>입니다.'],
+  };
+
+  function 수량안내() {
+    if (!수량메모) return;
+    const 고른 = checked('qty')[0];
+    const 말 = 구간말[고른];
+    수량메모.classList.remove('is-on', 'is-up');
+    if (!말) { 수량메모.innerHTML = 기본메모; return; }
+    if (말[0]) 수량메모.classList.add(말[0]);
+    else 수량메모.classList.add('is-on');
+    수량메모.innerHTML = 말[1];
+  }
+
+  $$('input[name="qty"]').forEach((el) => el.addEventListener('change', 수량안내));
+  수량안내();
+
   function shake(el) {
     if (!el || reduce) return;
     el.animate(
@@ -460,9 +489,6 @@
 
     const body = compose();
     doneBox.textContent = body;
-    const subject = `[견적문의] ${val('#fBrand') || val('#fName')} — ${checked('qty')[0]}`;
-    $('#doneMail').href =
-      `mailto:${RECEIVER}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     const btn = form.querySelector('button[type="submit"]');
     const label = btn.textContent;
@@ -482,16 +508,17 @@
     /* 접수됐다고 말할 수 있는 조건 — 둘 중 하나만 성공해도 됩니다.
        메일이 실패해도 시트에 들어갔으면 앱스스크립트가 대신 알림을 보냅니다.
        그러니 그 경우도 '전달됨' 이 맞습니다.
-       둘 다 실패했을 때만 손님에게 직접 메일을 부탁합니다. */
+       둘 다 실패했을 때만 손님에게 전화를 부탁합니다. */
     const 접수 = ok || logged;
 
     $('#doneTitle').textContent = 접수 ? '문의가 접수됐습니다' : '견적 요청서가 준비됐습니다';
     $('#doneLede').textContent  = 접수
       ? '담당자가 확인하는 대로 회신드립니다. 아래는 보내신 내용입니다.'
-      : '지금 전송이 되지 않았습니다. 아래 내용을 메일로 보내시거나 복사해 전달해 주세요.';
+      : '지금 전송이 되지 않았습니다. 아래 내용을 복사해 전화로 알려 주시면 바로 받겠습니다.';
     $('#doneBadge').textContent = 접수 ? 'SENT' : 'READY';
-    $('#doneMail').classList.toggle('btn--red', !접수);
-    $('#doneMail').textContent = 접수 ? '메일로도 보내기' : '메일로 보내기';
+    // 전송이 실패해도 메일 주소를 띄우지 않습니다. 전화 한 길로만 안내합니다. (2026-10-04)
+    const 전화 = $('#doneCall');
+    if (전화) 전화.classList.toggle('btn--red', !접수);
 
     form.style.display = 'none';
     done.classList.add('is-on');
