@@ -38,14 +38,18 @@
     }
   } catch (e) { vid = 'anon'; }
 
+  /* ⚠️ content-type 을 application/json 으로 보내면 안 된다.
+     넥소는 같은 출처(/api/track)라 상관없었지만 여기는 워커로 가는 교차 출처다.
+     json 으로 보내면 프리플라이트(OPTIONS)가 붙고, sendBeacon 은 프리플라이트를
+     못 해서 **조용히 아무것도 안 보낸다.** 2026-10-04 에 실제로 한 건도 안 들어왔다.
+     text/plain 은 '단순 요청'이라 프리플라이트가 안 붙는다. 워커는 본문만 읽으므로 문제없다. */
   function send(o) {
     try {
       var body = JSON.stringify(o);
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(API, new Blob([body], { type: 'application/json' }));
+        navigator.sendBeacon(API, new Blob([body], { type: 'text/plain;charset=UTF-8' }));
       } else {
-        fetch(API, { method: 'POST', headers: { 'content-type': 'application/json' },
-                     body: body, keepalive: true });
+        fetch(API, { method: 'POST', body: body, keepalive: true, mode: 'cors' });
       }
     } catch (e) {}
   }
