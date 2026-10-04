@@ -60,6 +60,61 @@
     .inqT td[data-l="접수"]::before { display: none; }
     .inqT td:first-child::before { display: none; }
   }
+
+  /* ── 방문 통계 (넥소 어드민 구조를 옮김) ─────────────────── */
+  .rng { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .btn--sm { padding: 7px 14px; font-size: 13px; }
+  .btn--sm.on { border-color: var(--red); color: var(--red); }
+  h3.sub { margin-top: 38px; font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+  .hint { margin-top: 10px; font-size: 12.5px; line-height: 1.65; color: var(--tx-3); }
+
+  /* 일별 막대 */
+  .chart { display: flex; align-items: flex-end; gap: 3px; margin-top: 16px;
+           padding: 18px 14px 6px; border: 1px solid var(--line); border-radius: 14px;
+           background: rgba(255,255,255,.02); overflow-x: auto; min-height: 176px; }
+  .chart .col { flex: 1 0 14px; display: flex; flex-direction: column; align-items: center;
+                justify-content: flex-end; gap: 5px; }
+  .chart .col b { font-size: 11px; font-weight: 800; color: var(--tx-2); font-variant-numeric: tabular-nums; }
+  .chart .colbar { width: 100%; max-width: 30px; border-radius: 4px 4px 0 0;
+                   background: linear-gradient(180deg, var(--red) 0%, rgba(255,20,20,.42) 100%); }
+  .chart .col span { font-size: 10px; color: var(--tx-3); white-space: nowrap; }
+
+  /* 막대 표 */
+  .btbl { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; }
+  .btbl td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .btbl tr:last-child td { border-bottom: 0; }
+  .btbl .nm { width: 34%; color: var(--tx); font-weight: 600; word-break: keep-all; }
+  .btbl .num { width: 120px; text-align: right; font-weight: 800; color: var(--tx-2);
+               font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pbar { height: 8px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .pbar i { display: block; height: 100%; border-radius: 999px; background: var(--red); }
+  .pbar--alt i { background: rgba(255,255,255,.45); }
+
+  /* 일반 표 */
+  .stbl { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13.5px; }
+  .stbl th { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left;
+             font-size: 12px; font-weight: 700; color: var(--tx-3); white-space: nowrap; }
+  .stbl td { padding: 10px; border-bottom: 1px solid var(--line); color: var(--tx-2); }
+  .stbl td.n { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+  .stbl tr.best td { color: #fff; }
+
+  /* 날짜 × 유입경로 */
+  .dwrap { margin-top: 16px; overflow-x: auto; }
+  .dtbl { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+  .dtbl th, .dtbl td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .dtbl th { font-size: 11.5px; font-weight: 700; color: var(--tx-3); text-align: right; }
+  .dtbl th:first-child, .dtbl td:first-child { text-align: left; color: var(--tx-3); }
+  .dtbl td { text-align: right; font-variant-numeric: tabular-nums; color: var(--tx); }
+  .dtbl td.zero { color: rgba(255,255,255,.18); }
+  .dtbl tfoot td { font-weight: 800; color: var(--tx-2); border-bottom: 0; border-top: 1px solid var(--line-2); }
+  .dtbl tr.today td:first-child em { font-style: normal; margin-left: 6px; font-size: 10.5px;
+                                     color: var(--red); font-weight: 800; }
+  .dleg { display: flex; align-items: center; gap: 5px; margin-top: 14px;
+          font-size: 11.5px; color: var(--tx-3); flex-wrap: wrap; }
+  .dleg i { width: 18px; height: 11px; border-radius: 3px; display: inline-block; }
+  .dleg span { margin-left: 8px; }
+  .sempty { margin-top: 16px; font-size: 13.5px; color: var(--tx-3); }
+
   </style>
 <!-- 방문 계측 · 설정은 /assets/js/count.js 한 곳에만 있습니다 -->
 <script src="/assets/js/count.js?v=2019622a" defer></script>
@@ -109,43 +164,65 @@
   </div>
 
   <h2>방문 통계</h2>
-  <div class="kpi" id="kpi">
-    <div class="kpi__i kpi__i--off">
-      <div class="kpi__v" id="kpiVisits">—</div>
-      <div class="kpi__k">방문 수<br>집계 도구를 붙여야 나옵니다</div>
-    </div>
-    <div class="kpi__i">
-      <div class="kpi__v" id="kpiPages">22<small>페이지</small></div>
-      <div class="kpi__k">sitemap 에 올라간 URL</div>
-    </div>
-    <div class="kpi__i">
-      <div class="kpi__v" id="kpiImages">—</div>
-      <div class="kpi__k">이 페이지에서 잰 사이트 이미지 수</div>
-    </div>
-    <div class="kpi__i">
-      <div class="kpi__v" id="kpiBuild">—</div>
-      <div class="kpi__k">마지막 배포 시각</div>
-    </div>
-    <div class="kpi__i">
-      <div class="kpi__v" id="kpiInq">—</div>
-      <div class="kpi__k">아직 처리 안 한 문의<br>아래에서 비밀번호를 넣으면 나옵니다</div>
-    </div>
-    <div class="kpi__i">
-      <div class="kpi__v" id="kpiWired">—</div>
-      <div class="kpi__k">계측 코드가 심긴 페이지<br>모든 페이지에 있어야 정상입니다</div>
-    </div>
+  <div class="rng" id="rng">
+    <button class="btn btn--sm on" data-days="7" type="button">최근 7일</button>
+    <button class="btn btn--sm" data-days="30" type="button">30일</button>
+    <button class="btn btn--sm" data-days="90" type="button">90일</button>
+    <span class="sm" id="statHint" style="margin-left:12px;color:var(--tx-3)"></span>
   </div>
 
-  <div class="adm__warn" style="margin-top:22px;border-color:var(--line);background:rgba(255,255,255,.022)">
+  <div class="kpi" id="kpi" style="margin-top:18px">
+    <div class="kpi__i"><div class="kpi__v" id="kToday">—</div><div class="kpi__k">오늘 방문자</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kUv">—</div><div class="kpi__k">기간 방문자<br>같은 사람이 여러 번 와도 1명</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kPv">—</div><div class="kpi__k">페이지뷰<br>열어 본 페이지 수</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kTel">—</div><div class="kpi__k">전화 클릭<br>지금 유일한 직접 창구입니다</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kQt">—</div><div class="kpi__k">견적 폼 접수</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kConv">—</div><div class="kpi__k">전환율<br>방문자 대비 전화·견적</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kDwell">—</div><div class="kpi__k">평균 체류<br>한 페이지를 보는 시간</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kpiInq">—</div><div class="kpi__k">아직 처리 안 한 문의</div></div>
+  </div>
+
+  <h3 class="sub">날짜별 방문자</h3>
+  <div class="chart" id="chartDaily"></div>
+  <p class="hint">막대가 높을수록 그날 방문자가 많았다는 뜻입니다. 막대 위 숫자 = 방문자 수.</p>
+
+  <h3 class="sub">어디서 들어왔나</h3>
+  <div id="tblSources"></div>
+  <p class="hint">"직접 접속"은 주소 직접 입력·즐겨찾기·카톡 링크 등입니다.
+     같은 방문자는 하루 1회만 셉니다. 우리 사이트 안에서 옮겨 다닌 것은 빠집니다.</p>
+
+  <h3 class="sub">날짜별 유입 경로</h3>
+  <div id="tblDaily"></div>
+  <p class="hint">칸이 진할수록 그 경로로 들어온 사람이 많았다는 뜻입니다. 칸에 마우스를 올리면 그날 중 비율이 나옵니다.</p>
+
+  <h3 class="sub">처음 열린 페이지</h3>
+  <div id="tblLandings"></div>
+  <p class="hint">밖에서 들어올 때 가장 먼저 연 페이지입니다. 검색·광고가 어디로 데려오는지 보입니다.</p>
+
+  <h3 class="sub">페이지별 조회와 체류</h3>
+  <div id="tblPaths"></div>
+  <p class="hint">평균 체류 = 그 페이지를 한 번 열었을 때 머문 시간. 🏆 가 가장 오래 머문 페이지입니다.</p>
+
+  <h3 class="sub">기기</h3>
+  <div id="tblDevices"></div>
+
+  <div class="adm__warn" style="margin-top:26px;border-color:var(--line);background:rgba(255,255,255,.022)">
     <span aria-hidden="true">✱</span>
-    <div>
-      <b id="whyTitle">왜 방문 수가 아직 비어 있나</b>
-      <span id="whyBody"> — 계측 코드는 전 페이지에 심어 뒀습니다.
-      다만 방문을 <b>받아 적을 곳</b>의 번호가 아직 비어 있어서, 코드가 아무것도 보내지 않습니다.
-      아래 <b>네이버 애널리틱스</b>에서 사이트를 등록하고 <b>등록번호</b>만 알려주시면
-      한 줄 고쳐서 바로 켜집니다.
-      <br><br><b>지난 방문은 소급해서 알 수 없습니다.</b> 오늘 켜면 오늘부터 쌓입니다.</span>
-    </div>
+    <div>이 숫자는 <b>우리가 직접 세는 것</b>입니다 (넥소 어드민과 같은 방식).
+      네이버 애널리틱스·GA 등록번호 없이도 돕니다.
+      <br><br>
+      해외 접속과 데이터센터(클라우드)에서 오는 요청은 <b>저장 자체를 안 합니다</b> — 거의 봇입니다.
+      한 사람이 한 시간에 같은 페이지를 25번 넘게 열거나, 같은 IP 가 한 페이지를 5번 넘게 열면 거기서 끊습니다.
+      <br><br>
+      <b>IP 는 저장하지 않습니다.</b> 폭주를 세는 열쇠로만 쓰고 그것도 해시 8자리입니다.
+      수집을 켠 날은 <b>2026-10-04</b>입니다 — 그 이전 방문은 알 수 없습니다.</div>
+  </div>
+
+  <div class="kpi" style="margin-top:22px">
+    <div class="kpi__i"><div class="kpi__v" id="kpiPages">—</div><div class="kpi__k">sitemap 에 올라간 URL</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kpiImages">—</div><div class="kpi__k">이 페이지에서 잰 사이트 이미지 수</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kpiBuild">—</div><div class="kpi__k">마지막 배포 시각</div></div>
+    <div class="kpi__i"><div class="kpi__v" id="kpiWired">—</div><div class="kpi__k">수집기가 실린 페이지<br>모든 페이지에 있어야 정상입니다</div></div>
   </div>
 
   <h2>문의</h2>
@@ -219,7 +296,7 @@
       사장님이 하루에도 몇 번씩 사이트를 열어 보시면 그게 전부 방문으로 잡힙니다.
       방문이 하루 10건일 때 그중 6건이 우리면 숫자를 볼 이유가 없어집니다.
       <br><br>
-      아래를 켜 두면 <b>이 브라우저에서만</b> 계측을 보내지 않습니다.
+      <b>어드민에 들어오면 자동으로 켜집니다.</b> 이 브라우저에서만 방문을 보내지 않습니다.
       다른 사람 방문은 그대로 잡힙니다.
       <br><br>
       <button class="btn" id="optBtn" type="button">확인 중…</button>
@@ -304,7 +381,7 @@
         fetch(u, { cache: 'no-store' }).then(function (r) { return r.text(); })
           .then(function (h) {
             total += (h.match(/<img\b/g) || []).length;
-            if (h.indexOf('/assets/js/count.js') > -1) wired++;
+            if (h.indexOf('/assets/js/track.js') > -1) wired++;
             else miss.push(u.replace(location.origin, '') || '/');
           })
           .catch(function () {})
@@ -347,16 +424,8 @@
       var sheet = (js.match(/const SHEET\s*=\s*'([^']*)'/) || [])[1];
       if (sheet) { $('sSheet').textContent = '연결됨'; $('sSheet').className = 'lnk__s s-on'; }
 
-      if (na || ga) {
-        $('kpiVisits').innerHTML = '켜짐';
-        var off = document.querySelector('.kpi__i--off');
-        if (off) off.classList.remove('kpi__i--off');
-        $('whyTitle').textContent = '방문 수는 어디서 보나';
-        $('whyBody').innerHTML = ' — 집계가 켜져 있습니다. 실제 숫자는 ' +
-          (na ? '<b>네이버 애널리틱스</b>' : '<b>GA4</b>') +
-          ' 화면에서 봅니다. 이 페이지는 서버가 없어서 그 숫자를 직접 가져올 수 없습니다.' +
-          '<br><br>데이터가 보이기까지 <b>반나절쯤</b> 걸립니다. 방금 켜셨다면 내일 보세요.';
-      }
+      /* 2026-10-04: 방문 수는 이제 우리 워커가 직접 센다.
+         네이버·GA 는 켜져 있으면 보조로 쓰는 것이라 여기서는 상태만 보여 준다. */
     }).catch(function () {});
 
   /* ── 문의 원장 ────────────────────────────────────────────────
@@ -404,7 +473,7 @@
             토큰저장(j.token);
             document.getElementById('gate').style.display = 'none';
             msg.textContent = '';
-            불러오기();
+            불러오기(); 통계불러오기();
             return;
           }
           if (j && j.why === 'locked') {
@@ -489,37 +558,177 @@
         .catch(function () { $('inqMsg').textContent = '원장에 연결하지 못했습니다'; });
     }
 
+    /* ── 방문 통계 ─────────────────────────────────────────────
+       넥소 어드민의 통계 화면을 옮겼다. 숫자의 뜻이 같아야 두 사이트를 같은 눈으로 본다. */
+    var STATS = API + '/stats';
+    var 기간 = 7;
+
+    var 이름표 = {
+      '/': '홈', '/items/': '제작 품목', '/guide/': '가이드', '/about/': '회사소개',
+      '/small-batch/': '다품종 소량생산', '/group/': '단체복', '/musinsa/': '무신사 입점',
+      '/blog/': '블로그', '/group/tshirt/': '단체티', '/group/uniform/': '단체 유니폼',
+      '/group/print/': '프린팅·자수', '/group/goods/': '단체 굿즈', '/group/family/': '가족티',
+      '/items/tshirt/': '티셔츠', '/items/hoodie/': '후드', '/items/sweatshirt/': '맨투맨',
+      '/items/shirt/': '셔츠', '/items/knit/': '니트', '/items/outer/': '아우터', '/items/varsity/': '과잠',
+      '/guide/fabric/': '원단 고르는 법', '/guide/tech-pack/': '작업지시서', '/guide/brand-launch/': '브랜드 런칭',
+      '/blog/church-tshirt/': '글 · 교회 티셔츠', '/blog/varsity-jacket/': '글 · 야구점퍼',
+      '/blog/long-sleeve/': '글 · 면과 폴리', '/blog/print-tee/': '글 · 프린팅 비교', '/blog/jeans/': '글 · 청바지',
+    };
+    function 쪽이름(p) { return 이름표[p] || 이름표[p.replace(/index\.html$/, '')] || p; }
+    function 시간(s) { return !s ? '0초' : (s < 60 ? s + '초' : Math.floor(s / 60) + '분 ' + (s % 60) + '초'); }
+    var 요일 = ['일', '월', '화', '수', '목', '금', '토'];
+
+    function 막대표(쌍, 단위, 흐리게) {
+      if (!쌍.length) return '<p class="sempty">아직 쌓인 게 없습니다. 방문이 들어오면 여기 나옵니다.</p>';
+      var max = 쌍[0][1];
+      var 합 = 쌍.reduce(function (s, e) { return s + e[1]; }, 0);
+      return '<table class="btbl"><tbody>' + 쌍.map(function (e) {
+        var pct = 합 ? Math.round(e[1] / 합 * 100) : 0;
+        return '<tr><td class="nm">' + esc(e[0]) + '</td><td><div class="pbar' + (흐리게 ? ' pbar--alt' : '') +
+          '"><i style="width:' + (max ? Math.round(e[1] / max * 100) : 0) + '%"></i></div></td>' +
+          '<td class="num">' + e[1].toLocaleString() + 단위 + ' · ' + pct + '%</td></tr>';
+      }).join('') + '</tbody></table>';
+    }
+
+    function 날짜별경로(byDate, 경로순, 오늘) {
+      var list = byDate || [];
+      if (!list.some(function (d) { return d.src && Object.keys(d.src).length; }))
+        return '<p class="sempty">아직 쌓인 게 없습니다.</p>';
+      var TOP = 6;
+      var cols = 경로순.slice(0, TOP).map(function (e) { return e[0]; });
+      var 기타있음 = 경로순.length > TOP;
+      var rows = list.slice().reverse().map(function (d) {
+        var src = d.src || {};
+        var cells = cols.map(function (c) { return src[c] || 0; });
+        var etc = 0;
+        Object.keys(src).forEach(function (k) { if (cols.indexOf(k) < 0) etc += src[k]; });
+        return { d: d, cells: cells, etc: etc, sum: cells.reduce(function (a, b) { return a + b; }, 0) + etc };
+      });
+      var max = 1;
+      rows.forEach(function (r) { r.cells.concat(기타있음 ? [r.etc] : []).forEach(function (v) { if (v > max) max = v; }); });
+      function 칸(v, r, 이름, 날) {
+        if (!v) return '<td class="zero">–</td>';
+        var a = (0.08 + 0.40 * v / max).toFixed(3);
+        return '<td style="background:rgba(255,20,20,' + a + ')" title="' + esc(날 + ' · ' + 이름 + ' ' + v + '명 · 그날의 ' + Math.round(v / (r.sum || 1) * 100) + '%') + '">' + v.toLocaleString() + '</td>';
+      }
+      var head = '<thead><tr><th>날짜</th>' + cols.map(function (c) { return '<th>' + esc(c) + '</th>'; }).join('') +
+        (기타있음 ? '<th>기타</th>' : '') + '<th>합계</th></tr></thead>';
+      var body = rows.map(function (r) {
+        var 날 = r.d.date.slice(5).replace('-', '/') + '(' + 요일[new Date(r.d.date + 'T00:00:00Z').getUTCDay()] + ')';
+        var 오늘인가 = r.d.date === 오늘;
+        return '<tr' + (오늘인가 ? ' class="today"' : '') + '><td>' + 날 + (오늘인가 ? '<em>오늘</em>' : '') + '</td>' +
+          r.cells.map(function (v, i) { return 칸(v, r, cols[i], 날); }).join('') +
+          (기타있음 ? 칸(r.etc, r, '기타', 날) : '') +
+          '<td>' + (r.sum ? r.sum.toLocaleString() : '–') + '</td></tr>';
+      }).join('');
+      var 합 = cols.map(function (c, i) { return rows.reduce(function (a, r) { return a + r.cells[i]; }, 0); });
+      var 기타합 = rows.reduce(function (a, r) { return a + r.etc; }, 0);
+      var 전체 = rows.reduce(function (a, r) { return a + r.sum; }, 0);
+      var foot = '<tfoot><tr><td>기간 합계</td>' + 합.map(function (v) { return '<td>' + v.toLocaleString() + '</td>'; }).join('') +
+        (기타있음 ? '<td>' + 기타합.toLocaleString() + '</td>' : '') + '<td>' + 전체.toLocaleString() + '</td></tr></tfoot>';
+      var 범례 = '<div class="dleg">적음<i style="background:rgba(255,20,20,.10)"></i><i style="background:rgba(255,20,20,.20)"></i>' +
+        '<i style="background:rgba(255,20,20,.33)"></i><i style="background:rgba(255,20,20,.46)"></i>많음' +
+        '<span>칸이 진할수록 그 경로로 들어온 사람이 많았다는 뜻입니다</span></div>';
+      return 범례 + '<div class="dwrap"><table class="dtbl">' + head + '<tbody>' + body + '</tbody>' + foot + '</table></div>';
+    }
+
+    function 통계불러오기() {
+      var tk = 토큰(); if (!tk) return;
+      var 안내 = $('statHint');
+      안내.textContent = '불러오는 중…';
+      fetch(STATS + '?days=' + 기간, { headers: { authorization: 'Bearer ' + tk } })
+        .then(function (r) { return r.json().catch(function () { return null; })
+          .then(function (j) { return { s: r.status, j: j }; }); })
+        .then(function (o) {
+          if (o.s === 401) { 잠그기('로그인이 만료됐습니다. 다시 들어와 주세요.'); return; }
+          if (!o.j || !o.j.ok) { 안내.textContent = '통계를 불러오지 못했습니다'; return; }
+          var s = o.j;
+          안내.textContent = s.from + ' ~ ' + s.to + ' · ' + s.ms + 'ms' + (s.catchingUp ? ' · 집계 이어받는 중…' : '');
+          if (s.catchingUp) {
+            통계불러오기._n = (통계불러오기._n || 0) + 1;
+            if (통계불러오기._n < 30) { setTimeout(통계불러오기, 700); } else { 통계불러오기._n = 0; }
+          } else { 통계불러오기._n = 0; }
+
+          var T = s.totals;
+          var 전환 = T.uv ? ((T.callers + T.quoters) / T.uv * 100).toFixed(1) : '0.0';
+          $('kToday').innerHTML = s.today.uv.toLocaleString() + '<small>명</small>';
+          $('kUv').innerHTML = T.uv.toLocaleString() + '<small>명</small>';
+          $('kPv').innerHTML = T.pv.toLocaleString() + '<small>회</small>';
+          $('kTel').innerHTML = T.tel.toLocaleString() + '<small>회 · ' + T.callers + '명</small>';
+          $('kQt').innerHTML = T.qt.toLocaleString() + '<small>건</small>';
+          $('kConv').innerHTML = 전환 + '<small>%</small>';
+          $('kDwell').innerHTML = 시간(T.avgDwellSec);
+
+          var maxUv = Math.max.apply(null, s.byDate.map(function (d) { return d.uv; }).concat([1]));
+          var 간격 = s.byDate.length > 40 ? 7 : (s.byDate.length > 10 ? 3 : 1);
+          $('chartDaily').innerHTML = s.byDate.map(function (d, i) {
+            return '<div class="col" title="' + d.date + ' · 방문자 ' + d.uv + '명 · 페이지뷰 ' + d.pv + '회">' +
+              (d.uv ? '<b>' + d.uv + '</b>' : '') +
+              '<div class="colbar" style="height:' + Math.max(2, Math.round(d.uv / maxUv * 110)) + 'px"></div>' +
+              '<span>' + (i % 간격 === 0 ? d.date.slice(5).replace('-', '/') : '') + '</span></div>';
+          }).join('');
+
+          var 경로 = Object.entries(s.sources).sort(function (a, b) { return b[1] - a[1]; });
+          $('tblSources').innerHTML = 막대표(경로, '명');
+          $('tblDaily').innerHTML = 날짜별경로(s.byDate, 경로, s.to);
+
+          var 랜딩 = Object.entries(s.landings).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10)
+            .map(function (e) { return [쪽이름(e[0]), e[1]]; });
+          $('tblLandings').innerHTML = 막대표(랜딩, '명');
+
+          var 최고 = s.paths.reduce(function (a, b) { return (b.dwTotal > (a ? a.dwTotal : -1)) ? b : a; }, null);
+          $('tblPaths').innerHTML = s.paths.length
+            ? '<table class="stbl"><thead><tr><th>페이지</th><th style="text-align:right">조회</th>' +
+              '<th style="text-align:right">평균 체류</th><th style="text-align:right">전화</th><th style="text-align:right">견적</th></tr></thead><tbody>' +
+              s.paths.slice(0, 14).map(function (x) {
+                var 왕 = 최고 && x.path === 최고.path && x.dwTotal > 0;
+                return '<tr' + (왕 ? ' class="best"' : '') + '><td>' + (왕 ? '🏆 ' : '') + esc(쪽이름(x.path)) + '</td>' +
+                  '<td class="n">' + x.pv.toLocaleString() + '</td><td class="n">' + 시간(x.avgDwellSec) + '</td>' +
+                  '<td class="n">' + x.tel + '</td><td class="n">' + x.qt + '</td></tr>';
+              }).join('') + '</tbody></table>'
+            : '<p class="sempty">아직 쌓인 게 없습니다.</p>';
+
+          $('tblDevices').innerHTML = 막대표(
+            Object.entries(s.devices).sort(function (a, b) { return b[1] - a[1]; }), '명', true);
+        })
+        .catch(function () { 안내.textContent = '통계 서버에 연결하지 못했습니다'; });
+    }
+
     ready(function () {
       var 가림막 = document.getElementById('gate');
-      if (토큰()) { 가림막.style.display = 'none'; 불러오기(); }
+      if (토큰()) { 가림막.style.display = 'none'; 불러오기(); 통계불러오기(); }
       document.getElementById('gGo').addEventListener('click', 로그인);
       ['gId', 'gPw'].forEach(function (id) {
         document.getElementById(id).addEventListener('keydown', function (e) { if (e.key === 'Enter') 로그인(); });
       });
       document.getElementById('gOut').addEventListener('click', function () { 잠그기('로그아웃했습니다.'); });
-      $('inqLoad').addEventListener('click', function () { 불러오기(); });
+      $('inqLoad').addEventListener('click', function () { 불러오기(); 통계불러오기(); });
+      [].forEach.call(document.querySelectorAll('#rng button'), function (b) {
+        b.addEventListener('click', function () {
+          [].forEach.call(document.querySelectorAll('#rng button'), function (x) { x.classList.remove('on'); });
+          b.classList.add('on'); 기간 = Number(b.dataset.days); 통계불러오기();
+        });
+      });
+      // 어드민에 들어온 브라우저는 통계에서 뺀다
+      try { localStorage.setItem('jnk_notrack', '1'); } catch (e) {}
       setInterval(function () { if (토큰() && !document.hidden) 불러오기(); }, 300000);
       // 옛 방식으로 브라우저에 남아 있던 열쇠는 지웁니다
       try { localStorage.removeItem('jnk_admin_key'); } catch (e) {}
     });
   })();
 
-  /* 내 방문 빼기 — count.js 가 올려 둔 스위치를 그대로 씁니다.
-     ⚠️ count.js 는 defer 라서 이 인라인 스크립트보다 늦게 돕니다.
-        여기서 바로 window.JNK_COUNT 를 찾으면 항상 없습니다.
-        DOMContentLoaded 는 defer 스크립트가 다 끝난 뒤에 옵니다. */
+  /* 내 방문 빼기 — track.js 가 보는 스위치(jnk_notrack)를 직접 켜고 끕니다.
+     어드민에 들어오면 자동으로 켜지므로 평소엔 손댈 일이 없습니다. */
   ready(function () {
     var btn = $('optBtn'), now = $('optNow');
-    var api = (window.JNK_COUNT && window.JNK_COUNT.optOut) || null;
-    if (!api) { btn.textContent = '사용할 수 없음'; btn.disabled = true;
-                now.textContent = 'count.js 를 못 읽었습니다'; return; }
+    function 빼는중() { try { return !!localStorage.getItem('jnk_notrack'); } catch (e) { return false; } }
     function paint() {
-      var on = api.is();
+      var on = 빼는중();
       btn.textContent = on ? '내 방문 다시 세기' : '이 브라우저 방문 빼기';
       now.textContent = on ? '지금: 빼는 중' : '지금: 세는 중';
     }
     btn.addEventListener('click', function () {
-      api.is() ? api.off() : api.on();
+      try { 빼는중() ? localStorage.removeItem('jnk_notrack') : localStorage.setItem('jnk_notrack', '1'); } catch (e) {}
       paint();
     });
     paint();
