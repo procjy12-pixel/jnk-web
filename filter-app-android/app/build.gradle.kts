@@ -11,8 +11,8 @@ android {
         applicationId = "kr.co.jnkcorp.filter"
         minSdk = 29
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.8"
+        versionCode = 15
+        versionName = "0.8.1"
         // 폰(ARM)용만 넣어 용량을 줄임
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }

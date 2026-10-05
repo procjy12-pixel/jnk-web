@@ -21,7 +21,8 @@ enum class Look(val label: String, val sub: String, val grain: Float, val vignet
     LEICA_MONO_NATURAL("라이카 모노 내추럴", "Mono Natural", 0.35f, 0.4f),
     LEICA_SELENIUM("라이카 셀레늄", "Selenium", 0.45f, 0.6f),
     LEICA_SEPIA("라이카 세피아", "Sepia", 0.45f, 0.6f),
-    LEICA_BLUE("라이카 블루", "Blue", 0.4f, 0.55f);
+    LEICA_BLUE("라이카 블루", "Blue", 0.4f, 0.55f),
+    RICOH_CINEMA_YELLOW("시네마 옐로우", "Cinema Yellow", 0.35f, 0.3f, Presets.RICOH);
 
     fun bake(): Lut3D = Lut3D.bake(title = sub) { r, g, b, o -> Looks.color(this, r, g, b, o) }
 }
@@ -43,6 +44,39 @@ object Looks {
         Look.LEICA_SELENIUM -> { mono(r, g, b, o, 0.4f, 0.5f, 0.1f, 0.6f, 0.02f); toneMono(o, -0.02f, -0.035f, 0.02f, 0.01f, 0f, -0.01f) }
         Look.LEICA_SEPIA -> { mono(r, g, b, o, 0.4f, 0.5f, 0.1f, 0.5f, 0.03f); toneMono(o, 0.05f, 0.0f, -0.09f, 0.03f, 0.005f, -0.05f) }
         Look.LEICA_BLUE -> { mono(r, g, b, o, 0.4f, 0.5f, 0.1f, 0.5f, 0.03f); toneMono(o, -0.07f, -0.02f, 0.07f, -0.03f, 0f, 0.03f) }
+        Look.RICOH_CINEMA_YELLOW -> cinemaYellow(r, g, b, o)
+    }
+
+    // ── 시네마 옐로우 (리코 GR 의 이미지 컨트롤을 참고한 근사치):
+    //    옛 필름 영화처럼 전체가 호박빛, 밝은 곳은 금빛, 파랑은 채도를 빼 청록 쪽으로,
+    //    그림자는 살짝 올리브, 부드러운 대비에 블랙을 조금 띄움.
+    private fun cinemaYellow(r0: Float, g0: Float, b0: Float, o: FloatArray) {
+        var r = sCurve(clamp01(r0), 0.25f)
+        var g = sCurve(clamp01(g0), 0.25f)
+        var b = sCurve(clamp01(b0), 0.25f)
+
+        // 파랑·하늘색은 채도를 크게 빼고 살짝 청록으로, 나머지는 조금만
+        val blue = clamp01((b - max(r, g)) * 3f)
+        saturate(r, g, b, 0.82f - 0.3f * blue, o)
+        r = o[0]; g = o[1]; b = o[2]
+        g += 0.02f * blue * b
+
+        // 노란 기운: 중간톤부터 밝은 곳으로 갈수록 강하게
+        val l = clamp01(luma(r, g, b))
+        val mid = 4f * l * (1f - l)
+        val hi = l * l
+        r += 0.02f * mid + 0.045f * hi
+        g += 0.025f * mid + 0.04f * hi
+        b -= 0.05f * mid + 0.085f * hi
+
+        // 그림자는 살짝 올리브
+        val sh = (1f - l) * (1f - l)
+        r -= 0.004f * sh; g += 0.014f * sh; b += 0.004f * sh
+
+        // 블랙 띄우고 하이라이트는 부드럽게
+        o[0] = 0.04f + 0.92f * r
+        o[1] = 0.04f + 0.92f * g
+        o[2] = 0.035f + 0.9f * b
     }
 
     /** 공통: 따뜻함 → 대비 → 채도 → 블랙 들어올림 */

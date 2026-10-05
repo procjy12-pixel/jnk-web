@@ -233,7 +233,8 @@ class LutTest {
 
         val tiles = ArrayList<IntArray>()
         tiles += px.copyOf()
-        for (l in Look.values().filter { it.category == Presets.LEICA }) {
+        val pick = System.getenv("PREVIEW_LOOKS")?.split(",")?.map { Look.valueOf(it.trim()) }
+        for (l in pick ?: Look.values().filter { it.category == Presets.LEICA }) {
             val c = px.copyOf()
             Pipeline.process(c, w, h, Grade(l.bake(), 1f, l.grain, l.vignette))
             tiles += c
