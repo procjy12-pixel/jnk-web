@@ -11,8 +11,8 @@ android {
         applicationId = "kr.co.jnkcorp.filter"
         minSdk = 29
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.8.1"
+        versionCode = 16
+        versionName = "0.9"
         // 폰(ARM)용만 넣어 용량을 줄임
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
@@ -42,6 +42,12 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$camerax")
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    implementation("androidx.camera:camera-video:$camerax")
+    // 영상에 필터 입히기 (GPU 에서 LUT·자르기·오버레이)
+    val media3 = "1.4.1"
+    implementation("androidx.media3:media3-transformer:$media3")
+    implementation("androidx.media3:media3-effect:$media3")
+    implementation("androidx.media3:media3-common:$media3")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
 }

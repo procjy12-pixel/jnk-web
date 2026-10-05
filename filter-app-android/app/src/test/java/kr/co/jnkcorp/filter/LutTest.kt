@@ -209,6 +209,33 @@ class LutTest {
         assertEquals(3f, Lenses.tidy(2.9f), 0.001f)
     }
 
+    @Test fun videoLutCubeOrder() {
+        // 빨강만 바꾸는 LUT: 영상용 cube[R][G][B] 의 빨강 칸이 맞는 자리에 가야 함
+        val lut = Lut3D.bake(5) { r, g, b, o -> o[0] = 1f - r; o[1] = g; o[2] = b }
+        val cube = VideoExport.toCube(lut)
+        assertEquals(5, cube.size)
+        val c = cube[4][0][2]          // 입력 r=1, g=0, b=0.5
+        assertEquals(0, (c shr 16) and 0xFF)          // 빨강 1 → 0
+        assertEquals(0, (c shr 8) and 0xFF)           // 초록 0
+        assertEquals(128, c and 0xFF, 1)              // 파랑 0.5
+        assertEquals(0xFF, (c ushr 24))               // 불투명
+    }
+
+    @Test fun videoCropNdc() {
+        // 1920x1080 영상의 가운데 1:1 (1080x1080) → x -0.5625..0.5625, y 전체
+        val b = cropBox(1920, 1080, Frame.SQUARE, false, 0.5f, 0.5f)
+        val n = VideoExport.cropNdc(1920, 1080, b)
+        assertEquals(-0.5625f, n[0], 0.002f); assertEquals(0.5625f, n[1], 0.002f)
+        assertEquals(-1f, n[2], 0.002f); assertEquals(1f, n[3], 0.002f)
+        // 위쪽에 붙인 16:9 (세로 영상 1080x1920 에서 가로↔세로 바꿔 위쪽) → 위(+1)부터
+        val top = cropBox(1080, 1920, Frame.WIDE, true, 0.5f, 0f)
+        val t = VideoExport.cropNdc(1080, 1920, top)
+        assertEquals(1f, t[3], 0.002f)
+        assertTrue(t[2] > -1f)
+    }
+
+    private fun assertEquals(expected: Int, actual: Int, tol: Int) = assertTrue("$expected ≈ $actual", kotlin.math.abs(expected - actual) <= tol)
+
     @Test fun monoDetection() {
         assertTrue(Look.LEICA_MONO.bake().isMono)
         assertFalse(Look.LEICA_CLASSIC.bake().isMono)

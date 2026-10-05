@@ -57,6 +57,9 @@ class MainActivity : Activity() {
     private var sourceUri: Uri? = null
     private var captureUri: Uri? = null
     private var previewFull: Bitmap? = null   // 자르기 전 미리보기
+    private var isVideo = false               // 지금 연 게 영상인지 (미리보기는 영상의 한 장면)
+    private var videoInfo: VideoInfo? = null
+    private lateinit var videoBadge: TextView
     private var preview: Bitmap? = null       // 프레임으로 자른 미리보기
     private var previewPx: IntArray? = null
     private var thumbPx: IntArray? = null
@@ -343,6 +346,17 @@ class MainActivity : Activity() {
         }
         stage.addView(canvasBox, -1, -1)
         stage.addView(hint, -1, -1)
+        // 좌상단: 영상이면 표시
+        videoBadge = TextView(this).apply {
+            textSize = 12f
+            setTextColor(Color.WHITE)
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            background = GradientDrawable().apply { cornerRadius = dp(16).toFloat(); setColor(0xCCD8001C.toInt()) }
+            visibility = View.GONE
+        }
+        stage.addView(videoBadge, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
+            topMargin = dp(10); leftMargin = dp(10)
+        })
         // 우상단 자동 노출
         autoBtn = TextView(this).apply {
             text = "☀ 자동 노출"
@@ -892,11 +906,17 @@ class MainActivity : Activity() {
         }
     }
 
+    /** 사진 고르기. 편집할 사진(REQ_PICK)은 영상도 고를 수 있음 */
     private fun pick(req: Int) {
+        val withVideo = req == REQ_PICK
         val i = if (Build.VERSION.SDK_INT >= 33) {
-            Intent(MediaStore.ACTION_PICK_IMAGES)
+            Intent(MediaStore.ACTION_PICK_IMAGES).apply { if (!withVideo) type = "image/*" }   // 기본은 사진+영상
         } else {
-            Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*"; addCategory(Intent.CATEGORY_OPENABLE) }
+            Intent(Intent.ACTION_GET_CONTENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                if (withVideo) { type = "*/*"; putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*")) }
+                else type = "image/*"
+            }
         }
         startActivityForResult(i, req)
     }
@@ -965,10 +985,21 @@ class MainActivity : Activity() {
         hint.visibility = View.VISIBLE
         hint.text = "불러오는 중…"
         bg.execute {
-            val bmp = try { decode(uri, PREVIEW_MAX) } catch (e: Exception) { null }
+            val video = runCatching { contentResolver.getType(uri)?.startsWith("video/") }.getOrNull() == true
+            val info = if (video) VideoExport.info(this, uri) else null
+            val bmp = try {
+                if (video) VideoExport.frame(this, uri, PREVIEW_MAX) else decode(uri, PREVIEW_MAX)
+            } catch (e: Exception) { null }
             main.post {
-                if (bmp == null) { hint.text = "사진을 열 수 없습니다"; return@post }
+                if (bmp == null) { hint.text = if (video) "영상을 열 수 없습니다" else "사진을 열 수 없습니다"; return@post }
                 previewFull = bmp
+                isVideo = video
+                videoInfo = info
+                videoBadge.visibility = if (video) View.VISIBLE else View.GONE
+                if (video) {
+                    val sec = (info?.durationMs ?: 0L) / 1000
+                    videoBadge.text = "▶ 영상 ${sec / 60}:${String.format("%02d", sec % 60)} · 한 장면으로 맞추고 저장하면 전체에 적용"
+                }
                 layers.clear(); activeLayer = -1; maskUndo = null
                 resetZoom()
                 rebuildMaskPanel()
@@ -1106,6 +1137,7 @@ class MainActivity : Activity() {
     }
 
     private fun savePhoto() {
+        if (isVideo) { saveVideo(); return }
         val uri = sourceUri ?: run { toast("먼저 사진을 여세요"); return }
         val prev = preview ?: return
         val grade = currentGrade()
@@ -1135,6 +1167,38 @@ class MainActivity : Activity() {
             }
             main.post { toast(if (ok) "갤러리 Pictures/FOFilter 에 저장했습니다" else "저장하지 못했습니다") }
         }
+    }
+
+    private var videoJob: VideoExport.Job? = null
+
+    /** 영상 전체에 지금 설정을 입혀 Movies/FOFilter 로 (그레인·마스크는 영상엔 안 들어감) */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private fun saveVideo() {
+        val uri = sourceUri ?: return
+        if (videoJob != null) { toast("이미 영상을 처리하는 중이에요"); return }
+        val g = currentGrade()
+        val grade = Grade(g.lut, 1f, 0f, g.vignette)
+        val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
+        if (!makerMode) { store.pushRecent(currentSettings()); rebuildRecent() }
+        store.current = currentSettings()
+        if (layers.any { !it.mask.isEmpty() }) toast("마스크 레이어는 영상에는 들어가지 않아요")
+        val progress = TextView(this).apply {
+            text = "필터 입히는 중 0%"; textSize = 15f; setPadding(dp(24), dp(16), dp(24), dp(8))
+        }
+        val dialog = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("영상 저장")
+            .setView(progress)
+            .setCancelable(false)
+            .setNegativeButton("취소") { _, _ -> videoJob?.transformer?.cancel(); videoJob?.output?.delete(); videoJob = null }
+            .show()
+        videoJob = VideoExport.export(applicationContext, uri, grade, frame, frameFlip, cropX, cropY, watermark, name,
+            onProgress = { p -> progress.text = "필터 입히는 중 $p%" },
+            onDone = { saved, err ->
+                videoJob = null
+                runCatching { dialog.dismiss() }
+                toast(if (saved != null) "Movies/FOFilter 에 영상을 저장했어요" else "영상 저장 실패: ${err ?: ""}")
+            })
+        if (videoJob == null) runCatching { dialog.dismiss() }
     }
 
     private fun writeToGallery(bmp: Bitmap, tag: String): Uri? {

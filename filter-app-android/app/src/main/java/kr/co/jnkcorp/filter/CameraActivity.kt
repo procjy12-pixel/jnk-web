@@ -80,6 +80,25 @@ class CameraActivity : ComponentActivity() {
     private var lastOriginal: Uri? = null
     private var pending = 0
     private var lastRotation = 0
+
+    // 영상
+    private var videoMode = false
+    private var videoCapture: androidx.camera.video.VideoCapture<androidx.camera.video.Recorder>? = null
+    private var recording: androidx.camera.video.Recording? = null
+    private var recStart = 0L
+    private val exportQueue = ArrayDeque<Pair<Uri, Settings>>()
+    private var exporting = false
+    private var exportPct = 0
+    private lateinit var shutterView: View
+    private lateinit var modeBtn: TextView
+    private val recTick = object : Runnable {
+        override fun run() {
+            if (recording == null) return
+            val sec = (System.currentTimeMillis() - recStart) / 1000
+            status.text = "● 녹화 중 ${sec / 60}:${String.format("%02d", sec % 60)}"
+            status.postDelayed(this, 500)
+        }
+    }
     private var firstFrame = false
     private val sound = MediaActionSound()
 
@@ -112,7 +131,11 @@ class CameraActivity : ComponentActivity() {
                     in 225..314 -> Surface.ROTATION_90
                     else -> Surface.ROTATION_0
                 }
-                if (r != lastRotation) { lastRotation = r; imageCapture?.targetRotation = r }
+                if (r != lastRotation) {
+                    lastRotation = r
+                    imageCapture?.targetRotation = r
+                    if (recording == null) videoCapture?.targetRotation = r
+                }
             }
         }
     }
@@ -223,19 +246,40 @@ class CameraActivity : ComponentActivity() {
                     try { proxy.close() } catch (_: Throwable) {}
                 }
             } }
-        imageCapture = ImageCapture.Builder()
-            // ZSL 은 CameraX 에서 아직 실험 기능이고 일부 삼성 기기에서 문제가 있어 안정적인 지연 최소화 모드를 씀
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-            .setResolutionSelector(ResolutionSelector.Builder().setAspectRatioStrategy(ratio43).build())
-            .setFlashMode(flashMode)
-            .setTargetRotation(lastRotation)
-            .build()
         val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
-        camera = try {
-            p.bindToLifecycle(this, selector, analysis, imageCapture)
-        } catch (e: Exception) {
-            toast("카메라를 열 수 없습니다: ${e.message}"); null
+        if (videoMode) {
+            // 영상: 화면용 분석 + 녹화 (사진 촬영은 빼서 기기 부담을 줄임)
+            imageCapture = null
+            val recorder = androidx.camera.video.Recorder.Builder()
+                .setQualitySelector(androidx.camera.video.QualitySelector.from(
+                    androidx.camera.video.Quality.FHD,
+                    androidx.camera.video.FallbackStrategy.lowerQualityOrHigherThan(androidx.camera.video.Quality.SD)))
+                .build()
+            videoCapture = androidx.camera.video.VideoCapture.Builder(recorder)
+                .setMirrorMode(androidx.camera.core.MirrorMode.MIRROR_MODE_ON_FRONT_ONLY)
+                .setTargetRotation(lastRotation)
+                .build()
+            camera = try {
+                p.bindToLifecycle(this, selector, analysis, videoCapture)
+            } catch (e: Exception) {
+                toast("영상 촬영을 시작할 수 없습니다: ${e.message}"); null
+            }
+        } else {
+            videoCapture = null
+            imageCapture = ImageCapture.Builder()
+                // ZSL 은 CameraX 에서 아직 실험 기능이고 일부 삼성 기기에서 문제가 있어 안정적인 지연 최소화 모드를 씀
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .setResolutionSelector(ResolutionSelector.Builder().setAspectRatioStrategy(ratio43).build())
+                .setFlashMode(flashMode)
+                .setTargetRotation(lastRotation)
+                .build()
+            camera = try {
+                p.bindToLifecycle(this, selector, analysis, imageCapture)
+            } catch (e: Exception) {
+                toast("카메라를 열 수 없습니다: ${e.message}"); null
+            }
         }
+        styleShutter()
         setupExposure()
         setupLenses()
         CrashReport.step(this, "camera:bound")
@@ -264,7 +308,97 @@ class CameraActivity : ComponentActivity() {
     }
 
     private fun shoot() {
-        try { shootUnsafe() } catch (e: Throwable) { toast("촬영 실패: ${e.message}") }
+        try { if (videoMode) toggleRecording() else shootUnsafe() } catch (e: Throwable) { toast("촬영 실패: ${e.message}") }
+    }
+
+    // ───────────────────────── 영상 ─────────────────────────
+
+    private val askMic = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { _ ->
+        // 허용하지 않아도 소리 없이 찍을 수 있음
+        bind()
+    }
+
+    private fun setVideoMode(on: Boolean) {
+        if (recording != null) { toast("녹화를 먼저 멈춰 주세요"); return }
+        videoMode = on
+        modeBtn.text = if (on) "영상" else "사진"
+        modeBtn.setTextColor(if (on) Color.parseColor("#FF5A5A") else soft)
+        if (on && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            askMic.launch(Manifest.permission.RECORD_AUDIO)
+        } else bind()
+        updateStatus()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun toggleRecording() {
+        val active = recording
+        if (active != null) { active.stop(); return }
+        val vc = videoCapture ?: return
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "FO_${System.currentTimeMillis()}.mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/FOFilter/원본")
+        }
+        val opts = androidx.camera.video.MediaStoreOutputOptions.Builder(contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+            .setContentValues(values).build()
+        var pending = vc.output.prepareRecording(this, opts)
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) pending = pending.withAudioEnabled()
+        val s = cur
+        recording = pending.start(mainExecutor) { ev ->
+            when (ev) {
+                is androidx.camera.video.VideoRecordEvent.Start -> {
+                    recStart = System.currentTimeMillis()
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    styleShutter(); status.post(recTick)
+                }
+                is androidx.camera.video.VideoRecordEvent.Finalize -> {
+                    recording = null
+                    styleShutter()
+                    val uri = ev.outputResults.outputUri
+                    if (ev.hasError() && ev.error != androidx.camera.video.VideoRecordEvent.Finalize.ERROR_SOURCE_INACTIVE || uri == Uri.EMPTY) {
+                        toast("녹화 실패 (${ev.error})"); updateStatus()
+                    } else {
+                        lastOriginal = uri
+                        exportQueue.addLast(uri to s)
+                        runExports()
+                    }
+                }
+                else -> {}
+            }
+        }
+    }
+
+    /** 찍은 영상에 차례로 필터를 입혀 Movies/FOFilter 로 (화면을 닫아도 앱이 살아 있는 동안 계속) */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private fun runExports() {
+        if (exporting) return
+        val (uri, s) = exportQueue.removeFirstOrNull() ?: run { updateStatus(); return }
+        exporting = true; exportPct = 0; updateStatus()
+        val g = captureGrade
+        val app = applicationContext
+        val job = VideoExport.export(app, uri, Grade(g.lut, 1f, 0f, g.vignette), s.frame, s.frameFlip, s.cropX, s.cropY,
+            watermark, s.lutName,
+            onProgress = { p -> exportPct = p; if (!isDestroyed) updateStatus() },
+            onDone = { saved, err ->
+                exporting = false
+                if (saved == null) Toast.makeText(app, "영상 필터 실패: ${err ?: ""}".take(200), Toast.LENGTH_SHORT).show()
+                else if (!isDestroyed) VideoExport.frame(app, saved, 256)?.let { thumb.setImageBitmap(it) }
+                if (!isDestroyed) runExports() else exportQueue.clear()
+            })
+        if (job == null) { exporting = false; runExports() }
+    }
+
+    private fun styleShutter() {
+        if (!::shutterView.isInitialized) return
+        val rec = recording != null
+        shutterView.background = GradientDrawable().apply {
+            if (videoMode && rec) { shape = GradientDrawable.RECTANGLE; cornerRadius = dp(10).toFloat(); setColor(Color.parseColor("#FF3B30")) }
+            else { shape = GradientDrawable.OVAL; setColor(if (videoMode) Color.parseColor("#FF3B30") else Color.WHITE) }
+            setStroke(dp(5), Color.parseColor("#555555"))
+        }
+        val inset = if (videoMode && rec) dp(18) else 0
+        (shutterView.layoutParams as? FrameLayout.LayoutParams)?.let { lp ->
+            lp.width = dp(78) - inset * 2; lp.height = dp(78) - inset * 2; shutterView.layoutParams = lp
+        }
     }
 
     private fun shootUnsafe() {
@@ -307,7 +441,13 @@ class CameraActivity : ComponentActivity() {
 
     private fun updateStatus() {
         if (cameraError != null) return
-        status.text = if (pending > 0) "저장 중 $pending" else "${cur.lutName} · ${cur.frame.label}"
+        if (recording != null) return
+        status.text = when {
+            pending > 0 -> "저장 중 $pending"
+            exporting -> "영상에 필터 입히는 중 $exportPct%" + if (exportQueue.isNotEmpty()) " (대기 ${exportQueue.size})" else ""
+            videoMode -> "영상 · ${cur.lutName} · ${cur.frame.label}"
+            else -> "${cur.lutName} · ${cur.frame.label}"
+        }
     }
 
     /**
@@ -547,6 +687,8 @@ class CameraActivity : ComponentActivity() {
             setSettings(cur.copy(frame = next))
         }
         top.addView(frameBtn)
+        modeBtn = chip("사진", false) { setVideoMode(!videoMode) }
+        top.addView(modeBtn)
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         top.addView(chip("기본 카메라", false) { done(system = true) })
         col.addView(top)
@@ -605,13 +747,13 @@ class CameraActivity : ComponentActivity() {
             setOnClickListener { if (lastOriginal != null) done() else toast("아직 찍은 사진이 없어요") }
         }
         controls.addView(thumb, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.START or Gravity.CENTER_VERTICAL))
-        val shutter = View(this).apply {
+        shutterView = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL; setColor(Color.WHITE); setStroke(dp(5), Color.parseColor("#555555"))
             }
             setOnClickListener { shoot() }
         }
-        controls.addView(shutter, FrameLayout.LayoutParams(dp(78), dp(78), Gravity.CENTER))
+        controls.addView(shutterView, FrameLayout.LayoutParams(dp(78), dp(78), Gravity.CENTER))
         val flip = TextView(this).apply {
             text = "⟲"
             textSize = 26f
@@ -619,6 +761,7 @@ class CameraActivity : ComponentActivity() {
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Color.parseColor("#222222")) }
             setOnClickListener {
+                if (recording != null) { toast("녹화 중에는 바꿀 수 없어요"); return@setOnClickListener }
                 front = !front
                 val has = runCatching { provider?.hasCamera(if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA) }.getOrNull()
                 if (has == false) { front = !front; toast("다른 쪽 카메라가 없어요"); return@setOnClickListener }

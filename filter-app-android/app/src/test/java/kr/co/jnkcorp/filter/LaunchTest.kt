@@ -61,6 +61,11 @@ class LaunchTest {
         org.junit.Assert.assertNotNull(findByText(a.window.decorView, "1.4×"))
         org.junit.Assert.assertNotNull(findByText(a.window.decorView, ".6"))
         org.junit.Assert.assertNotNull(findByText(a.window.decorView, "3"))
+        // 사진 ↔ 영상 전환 (영상이면 셔터가 빨간 녹화 버튼)
+        findByText(a.window.decorView, "사진")!!.performClick()
+        ShadowLooper.idleMainLooper()
+        org.junit.Assert.assertNotNull(findByText(a.window.decorView, "영상"))
+        drawAll(a)
     }
 
     /** 마스크 탭: 2배 확대·이동한 상태에서 한 손가락으로 칠한 곳이 사진의 정확한 위치에 칠해지는지 */

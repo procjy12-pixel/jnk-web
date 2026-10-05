@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 
     <application
@@ -19,11 +20,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- 갤러리에서 "공유 → JNK 필터" 로 바로 열 수 있게 -->
+            <!-- 갤러리에서 "공유 → FOFilter" 로 바로 열 수 있게 -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
         <activity
