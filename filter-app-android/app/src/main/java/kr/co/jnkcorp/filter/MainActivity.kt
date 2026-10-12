@@ -726,8 +726,10 @@ class MainActivity : Activity() {
 
     private fun select(e: LutEntry) {
         selected = e
-        // 기본 룩은 그 룩에 맞는 그레인·비네팅으로 맞춰 줍니다
-        e.look?.let { grain = it.grain; vignette = it.vignette; rebuildAdjust() }
+        // 기본 룩·라이카 룩은 그 룩에 맞는 그레인·비네팅으로 맞춰 줍니다
+        if (e.grain != null || e.vignette != null) {
+            e.grain?.let { grain = it }; e.vignette?.let { vignette = it }; rebuildAdjust()
+        }
         highlightChip()
         render()
     }

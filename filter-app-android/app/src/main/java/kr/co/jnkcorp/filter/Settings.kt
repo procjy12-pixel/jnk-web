@@ -41,9 +41,11 @@ data class Settings(
         fun fromJson(j: JSONObject): Settings {
             val a = j.optJSONObject("adj") ?: JSONObject()
             fun f(o: JSONObject, k: String, d: Float = 0f) = o.optDouble(k, d.toDouble()).toFloat()
+            // 없어진 LUT(예전 필름·라이카 근사치)를 쓰던 설정은 원본으로
+            val key = Presets.migrateKey(j.optString("lut").ifBlank { null })
             return Settings(
-                lutKey = j.optString("lut").ifBlank { null },
-                lutName = j.optString("lutName", "원본"),
+                lutKey = key,
+                lutName = if (key == null) "원본" else j.optString("lutName", "원본"),
                 intensity = f(j, "k", 1f), grain = f(j, "grain"), vignette = f(j, "vig"),
                 adjust = MakerParams(
                     exposure = f(a, "ev"), contrast = f(a, "con"), highlights = f(a, "hi"), shadows = f(a, "sh"),

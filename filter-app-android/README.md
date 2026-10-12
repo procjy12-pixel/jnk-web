@@ -35,8 +35,10 @@ HDR 영상은 SDR 로 바꿔 처리
 - 색 · 그림자 · 크기 · 투명도 · 자간, 톡 누르면 글자 바꾸기(여러 줄 가능). 설정은 기억되고 저장·자동저장 때 원본 해상도로 새겨짐
 
 **LUT 적용** 탭
-- 분류: 기본 · 라이카 · 리코 · 컬러 네거 · 슬라이드 · 후지 시뮬 · 시네마 · 흑백 · 인스턴트 · 내 LUT
-- 기본(틸앤오렌지) · 라이카 룩 12종(클래식 · 컨템퍼러리 · 내추럴 · 비비드 · 크롬 · 이터널 · 모노 · 모노 하이콘 · 모노 내추럴 · 셀레늄 · 세피아 · 블루) + 리코 시네마 옐로우 + 필름 에뮬레이션 29종 + 가져온 `.cube`
+- 분류: 기본 · 라이카 · 리코 · 내 LUT
+- 기본(원본 · 틸앤오렌지) · 라이카 룩 4종(틸 · 이터널 · 컨템퍼러리(CNT) · 클래식(CLS)) · 리코 시네마 옐로우 + 가져온 `.cube`
+- 라이카 룩은 같은 장면을 일반 카메라와 각 라이카 룩으로 찍은 사진을 겹쳐 맞추고 색 변화를 피팅한 LUT
+  (밝기 톤 곡선 · 채널별 색 · 밝기별 채도 · 비네팅). 참고 사진은 노출 자체가 어두워서 중간톤 어두워짐은 절반만 남김
 - 강도, 보정(노출 · 대비 · 하이라이트 · 그림자 · 채도 · 색온도 · 틴트, **색온도 자동**), 필름 효과(그레인 · 비네팅)
 - 슬라이더 이름을 누르면 기본값으로. "이 설정을 LUT로" 로 지금 조합을 LUT 로 저장
 - LUT 를 길게 누르면: `.cube` 로 내보내기(다운로드/FOFilter) · 이 LUT 를 기준으로 새로 만들기 · 삭제
@@ -55,15 +57,15 @@ HDR 영상은 SDR 로 바꿔 처리
 | 파일 | 내용 |
 |---|---|
 | `Lut3D.kt` | 3D LUT, 삼선형 보간, `.cube` 읽기/쓰기 |
-| `Looks.kt` | 기본 룩 색 함수 (LUT 로 구워서 씀) |
+| `Looks.kt` | 틸앤오렌지 · 시네마 옐로우 색 함수 (LUT 로 구워서 씀) |
 | `LutMaker.kt` | 슬라이더 → LUT, 참고 사진 색 전이 |
 | `Pipeline.kt` | 픽셀 배열에 LUT·마스크 레이어·그레인·비네팅 적용 (멀티스레드) |
 | `Mask.kt` | 브러시 마스크(추가/빼기), 레이어 |
 | `AutoFix.kt` | 색온도 자동, 자동 노출 |
 | `Watermark.kt` | 워터마크 글꼴·그리기·편집 뷰 |
 | `Settings.kt` | 프레임 자르기, 마지막·최근 설정 저장 |
-| `Presets.kt` | 같이 넣은 필름 LUT 목록 (assets/luts) |
-| `LutLibrary.kt` | 기본·필름·내 LUT 불러오기, 저장/가져오기/내보내기 |
+| `Presets.kt` | 같이 넣은 라이카 LUT 목록 (assets/luts/leica), 예전 설정 키 변환 |
+| `LutLibrary.kt` | 기본·라이카·내 LUT 불러오기, 저장/가져오기/내보내기 |
 | `CameraActivity.kt` | 앱 카메라 (CameraX, 실시간 LUT 미리보기, ZSL 촬영) |
 | `Lenses.kt` | 렌즈 구성 → 배율 버튼 |
 | `Gallery.kt` | 원본 해상도 처리·저장 |
@@ -90,18 +92,15 @@ PREVIEW_OUT=/tmp/out PREVIEW_SRC=photo.ppm PREVIEW_REF=ref.ppm ./gradlew testRel
 minSdk 29 (안드로이드 10+). 지금은 디버그 키로 서명되어 있어 바로 설치는 되지만,
 플레이스토어에 올리려면 서명 키를 따로 만들어야 합니다.
 
-## 같이 넣은 LUT 의 출처와 라이선스
+## 같이 넣은 LUT
 
-`app/src/main/assets/luts` 의 필름 에뮬레이션 29종은
-[G'MIC Film LUTs Collection](https://github.com/YahiaAngelo/Film-Luts) (MIT, 저작권 고지는
-`assets/luts/LICENSE-Film-Luts.txt`) 에서 골라 숫자 자릿수만 줄였습니다.
-원래는 G'MIC · RawTherapee 필름 시뮬레이션 계열이라, 스토어에 올리기 전에 원 출처 라이선스(CC BY-SA)도
-한 번 확인하는 게 안전합니다. 필름 이름(Portra, Velvia 등)은 각 제조사 상표이고, 이 LUT 들은 그 필름을
-흉내 낸 것일 뿐 제조사와 관계가 없습니다.
+`app/src/main/assets/luts/leica` 의 4종은 직접 찍은 참고 사진(일반 / 라이카 틸 / 이터널 / 컨템퍼러리 / 클래식)에서
+피팅해 만든 33³ LUT 입니다. 한 장면에서 피팅한 것이라 그 장면에 없던 색(초록·하늘색 등)은 무난한 쪽으로 이어 붙였습니다.
+만든 스크립트는 `tools/fit_look.py` (같은 장면의 일반/룩 사진 두 장 → `.cube`). 룩을 더 넣고 싶으면 사진 쌍만 있으면 됩니다.
 
 ### 글꼴
 
 `app/src/main/assets/fonts` — 모두 SIL Open Font License 1.1 (라이선스 파일 같이 있음)
 - Pretendard (orioncactus/pretendard), Playfair Display, Great Vibes, Nanum Pen Script (google/fonts)
 
-라이카 룩들과 시네마 옐로우는 라이카·리코 카메라의 룩 이름과 특징을 참고해 직접 만든 근사치이며, 각 회사와 관계가 없습니다.
+라이카 룩과 시네마 옐로우는 라이카·리코 카메라의 룩을 사진으로 따라 만든 근사치이며, 각 회사와 관계가 없습니다.

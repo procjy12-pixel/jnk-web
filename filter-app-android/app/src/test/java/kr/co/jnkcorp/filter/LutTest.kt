@@ -85,19 +85,35 @@ class LutTest {
         val id = Lut3D.identity(9)
         for (i in zero.data.indices) assertEquals(id.data[i], zero.data[i], 1e-4f)
         // 흑백 LUT 는 강도를 낮춰도 무채색 유지
-        LutMaker.build(Look.LEICA_MONO.bake(), null, MakerParams(), baseIntensity = 0.5f).sample(0.9f, 0.2f, 0.1f, o)
+        LutMaker.build(monoLut(), null, MakerParams(), baseIntensity = 0.5f).sample(0.9f, 0.2f, 0.1f, o)
         assertTrue(abs(o[0] - o[1]) < 1e-3 && abs(o[1] - o[2]) < 1e-3)
     }
 
-    /** 앱에 넣은 필름 LUT 가 모두 읽히는지 (Presets 목록과 assets 파일이 맞는지) */
+    private fun monoLut() = Lut3D.bake { r, g, b, o -> val m = 0.3f * r + 0.6f * g + 0.1f * b; o[0] = m; o[1] = m; o[2] = m }
+
+    private fun bundledLut(p: Presets.Preset): Lut3D =
+        File(assetsDir(), "luts/${p.path}.cube").reader().use { Lut3D.parseCube(it, p.sub) }
+
+    /** 앱에 넣은 라이카 LUT 가 모두 읽히는지 (Presets 목록과 assets 파일이 맞는지) */
     @Test fun allBundledLutsParse() {
         val root = assetsDir()
         for (p in Presets.all) {
             val f = File(root, "luts/${p.path}.cube")
             assertTrue("없음: ${f.path}", f.exists())
-            val lut = f.reader().use { Lut3D.parseCube(it) }
-            assertTrue(lut.size >= 2)
+            assertEquals(33, bundledLut(p).size)
         }
+        // assets 에 목록에 없는 LUT 가 남아 있지 않은지
+        val files = File(root, "luts").walkTopDown().filter { it.isFile }.map { it.relativeTo(File(root, "luts")).path }.toSet()
+        assertEquals(Presets.all.map { "${it.path}.cube" }.toSet(), files)
+    }
+
+    @Test fun oldSettingsKeysMigrate() {
+        assertEquals("preset:leica/leica_classic", Presets.migrateKey("look:LEICA_CLASSIC"))
+        assertEquals("look:TEAL_ORANGE", Presets.migrateKey("look:TEAL_ORANGE"))
+        assertEquals(null, Presets.migrateKey("look:LEICA_MONO"))
+        assertEquals(null, Presets.migrateKey("preset:bw/kodak_tri-x_400"))
+        assertEquals("preset:leica/leica_teal", Presets.migrateKey("preset:leica/leica_teal"))
+        assertEquals("file:내 룩.cube", Presets.migrateKey("file:내 룩.cube"))
     }
 
     private fun assetsDir(): File =
@@ -171,13 +187,24 @@ class LutTest {
     }
 
     @Test fun allLooksAreSane() {
-        for (l in Look.values()) {
-            val lut = l.bake()
-            assertTrue(l.name, lut.data.all { !it.isNaN() && it in 0f..1f })
+        val luts = Look.values().map { it.name to it.bake() } + Presets.all.map { it.sub to bundledLut(it) }
+        for ((name, lut) in luts) {
+            assertTrue(name, lut.data.all { !it.isNaN() && it in 0f..1f })
+            assertFalse("$name 흑백 아님", lut.isMono && name != "ORIGINAL")
+            var prev = -1f
+            for (i in 0..20) {
+                val v = i / 20f
+                lut.sample(v, v, v, o)
+                val l = luma(o[0], o[1], o[2])
+                assertTrue("$name 회색 밝기 순서 $v", l >= prev - 1e-3f)
+                prev = l
+            }
             lut.sample(0f, 0f, 0f, o); val black = luma(o[0], o[1], o[2])
             lut.sample(1f, 1f, 1f, o); val white = luma(o[0], o[1], o[2])
-            lut.sample(0.5f, 0.5f, 0.5f, o); val grey = luma(o[0], o[1], o[2])
-            assertTrue("${l.name} 밝기 순서", black < grey && grey < white)
+            assertTrue("$name 범위", black < 0.1f && white > 0.85f)
+            // 피부색이 엉뚱한 색이 되지 않게 (빨강 ≥ 초록 ≥ 파랑 유지)
+            lut.sample(0.9f, 0.68f, 0.55f, o)
+            assertTrue("$name 피부색 ${o.toList()}", o[0] >= o[1] && o[1] >= o[2])
         }
     }
 
@@ -237,8 +264,8 @@ class LutTest {
     private fun assertEquals(expected: Int, actual: Int, tol: Int) = assertTrue("$expected ≈ $actual", kotlin.math.abs(expected - actual) <= tol)
 
     @Test fun monoDetection() {
-        assertTrue(Look.LEICA_MONO.bake().isMono)
-        assertFalse(Look.LEICA_CLASSIC.bake().isMono)
+        assertTrue(monoLut().isMono)
+        assertFalse(Look.TEAL_ORANGE.bake().isMono)
     }
 
     @Test fun labRoundTrip() {
@@ -260,11 +287,16 @@ class LutTest {
 
         val tiles = ArrayList<IntArray>()
         tiles += px.copyOf()
-        val pick = System.getenv("PREVIEW_LOOKS")?.split(",")?.map { Look.valueOf(it.trim()) }
-        for (l in pick ?: Look.values().filter { it.category == Presets.LEICA }) {
+        val names = StringBuilder("원본\n")
+        for (l in Look.values().filter { it != Look.ORIGINAL }) {
             val c = px.copyOf()
             Pipeline.process(c, w, h, Grade(l.bake(), 1f, l.grain, l.vignette))
-            tiles += c
+            tiles += c; names.append(l.label).append('\n')
+        }
+        for (p in Presets.all) {
+            val c = px.copyOf()
+            Pipeline.process(c, w, h, Grade(bundledLut(p), 1f, p.grain, p.vignette))
+            tiles += c; names.append(p.name).append('\n')
         }
         val custom = MakerParams(contrast = 0.3f, saturation = -0.15f, temperature = 0.2f, fade = 0.4f,
             shadowHue = 190f, shadowAmount = 0.6f, highlightHue = 35f, highlightAmount = 0.5f)
@@ -278,16 +310,7 @@ class LutTest {
             tiles += c2
         }
         tiles.forEachIndexed { i, p -> writePpm(File(outDir, "tile$i.ppm"), w, h, p) }
-        // 앱에 넣은 필름 LUT 전부
-        val names = StringBuilder()
-        Presets.all.forEachIndexed { i, p ->
-            val lut = File(assetsDir(), "luts/${p.path}.cube").reader().use { Lut3D.parseCube(it) }
-            val c = px.copyOf()
-            Pipeline.process(c, w, h, Grade(lut, 1f, 0f, 0f))
-            writePpm(File(outDir, "film$i.ppm"), w, h, c)
-            names.append(p.category).append(" · ").append(p.name).append('\n')
-        }
-        File(outDir, "film-names.txt").writeText(names.toString())
+        File(outDir, "tile-names.txt").writeText(names.toString())
         File(outDir, "TealOrange.cube").writeText(Look.TEAL_ORANGE.bake().withTitle("Teal & Orange").toCube())
     }
 

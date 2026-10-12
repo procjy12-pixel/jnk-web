@@ -13,6 +13,9 @@ class LutEntry(
     val category: String, val look: Look? = null, val file: File? = null,
     /** 설정 저장용 고유 키 (look:… / preset:… / file:…) */
     val key: String = look?.let { "look:${it.name}" } ?: file?.let { "file:${it.name}" } ?: "preset:$name",
+    /** 고르면 맞춰 줄 그레인·비네팅 (사용자 LUT 는 null → 지금 값 유지) */
+    val grain: Float? = look?.grain,
+    val vignette: Float? = look?.vignette,
 )
 
 /** 사용자가 만들거나 가져온 LUT 를 앱 저장소(files/luts 폴더에 .cube 파일로)에 둡니다. */
@@ -24,11 +27,11 @@ class LutLibrary(private val ctx: Context) {
         LutEntry(l.label, l.sub, if (l == Look.ORIGINAL) null else l.bake(), l.category, look = l)
     }
 
-    /** 앱에 같이 넣은 필름 LUT (assets/luts) */
+    /** 앱에 같이 넣은 라이카 룩 LUT (assets/luts) */
     fun bundled(): List<LutEntry> = Presets.all.mapNotNull { p ->
         try {
-            val lut = ctx.assets.open("luts/${p.path}.cube").reader().use { Lut3D.parseCube(it, p.name) }
-            LutEntry(p.name, p.category, lut, p.category, key = "preset:${p.path}")
+            val lut = ctx.assets.open("luts/${p.path}.cube").reader().use { Lut3D.parseCube(it, p.sub) }
+            LutEntry(p.name, p.sub, lut, p.category, key = "preset:${p.path}", grain = p.grain, vignette = p.vignette)
         } catch (e: Exception) {
             null
         }

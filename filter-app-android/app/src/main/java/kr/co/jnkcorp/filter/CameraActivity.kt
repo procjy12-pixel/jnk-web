@@ -608,8 +608,8 @@ class CameraActivity : ComponentActivity() {
         }
         entries.forEach { e ->
             lutRow.addView(chip(e.name, e.key == cur.lutKey) {
-                val g = e.look?.grain ?: cur.grain
-                val v = e.look?.vignette ?: cur.vignette
+                val g = e.grain ?: cur.grain
+                val v = e.vignette ?: cur.vignette
                 setSettings(cur.copy(lutKey = e.key, lutName = e.name, grain = g, vignette = v))
             })
         }
