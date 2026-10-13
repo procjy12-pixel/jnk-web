@@ -30,7 +30,7 @@
 <meta name="google-site-verification" content="s_wU7u5ZCdcMxYX7LznhFhWMLFcndVbxCyWKn0cul48">
 
 <link rel="preload" as="image" href="assets/img/art/hero-poster.jpg">
-<link rel="stylesheet" href="assets/css/site.css">
+<link rel="stylesheet" href="assets/css/site.css?v=20261013">
 <script>
 /* 스크롤 등장 효과는 JS 가 살아있을 때만 켭니다.
  이 한 줄이 없으면 본문은 처음부터 보이는 상태로 남습니다. */
@@ -390,10 +390,10 @@
  </div>
  <div class="row" data-rv="left" style="--d:70ms">
  <div class="row__k">주문 합계</div>
- <div class="row__v"><b style="color:#fff">200장</b>부터 받습니다</div>
+ <div class="row__v"><b style="color:#fff">300장</b>부터 받습니다</div>
  </div>
  <div class="row" data-rv="left" style="--d:140ms">
- <div class="row__k">200 ~ 500장</div>
+ <div class="row__k">300 ~ 500장</div>
  <div class="row__v">국내 생산과 비용이 비슷합니다. 숨기지 않고 말씀드립니다</div>
  </div>
  <div class="row" data-rv="left" style="--d:210ms">
@@ -1011,7 +1011,7 @@
  </div>
  <div class="row" data-rv="left" style="--d:140ms">
  <div class="row__k">몇 장부터</div>
- <div class="row__v"><b style="color:#fff">한 스타일 100장, 주문은 합계 200장부터</b>입니다.<br class="sb">
+ <div class="row__v"><b style="color:#fff">한 스타일 100장, 주문은 합계 300장부터</b>입니다.<br class="sb">
       <b style="color:var(--tx-2)">한 가지를 많이 만들 필요가 없습니다.</b>
       티셔츠 100장 + 맨투맨 100장 + 후드 100장처럼 나눠 담으셔도 됩니다.
       보통은 한 품목을 통으로 채워야 합니다 — 품목마다 운임이 따로 붙기 때문입니다.<br class="sb">
@@ -1125,26 +1125,26 @@
  </div>
  </div>
 
- <!-- 수량 -->
+ <!-- 수량 — 구간을 고르는 대신 실제 수량을 받습니다. 바를 움직이거나 숫자를 적습니다 (2026-10-13) -->
  <div class="fld" data-rv="fade">
  <div class="fld__l">
  <b>*</b> 수량
- <span class="fld__h">주문 합계 기준 · 한 스타일 100장</span>
+ <span class="fld__h">주문 합계 기준 · 300장부터</span>
  </div>
- <div class="qty" id="pickQty">
- <input type="radio" id="q1" name="qty" value="200~499장">
- <label for="q1"><div class="qty__v">200 ~ 499장</div><div class="qty__x">국내 생산과 비용이 비슷합니다</div></label>
-
- <input type="radio" id="q2" name="qty" value="500~999장">
- <label for="q2"><div class="qty__v">500 ~ 999장</div><div class="qty__x">운임 포함 20~30% 낮아집니다</div></label>
-
- <input type="radio" id="q3" name="qty" value="1,000~2,999장">
- <label for="q3"><span class="qty__b">최저가</span><div class="qty__v">1,000 ~ 2,999장</div><div class="qty__x">국내 납품 업체 중 최저가 수준</div></label>
-
- <input type="radio" id="q4" name="qty" value="3,000장 이상 (대량)">
- <label for="q4"><span class="qty__b">대량</span><div class="qty__v">3,000장 이상</div><div class="qty__x">4개국 분할발주 · 해외 라인</div></label>
+ <div class="amt" id="pickQty">
+ <div class="amt__top">
+ <label class="amt__num" for="fQty">
+ <input class="amt__in" type="text" id="fQty" name="qty" inputmode="numeric" autocomplete="off" placeholder="0" maxlength="9" aria-describedby="qtyNote">
+ <span class="amt__u">장</span>
+ </label>
+ <span class="amt__band" id="qtyBand">바를 움직이거나 숫자를 적어 주세요</span>
  </div>
- <p class="qty__note" id="qtyNote">한 스타일 <b>100장</b>부터입니다. 한 가지를 많이 만드실 필요가 없습니다 —
+ <input class="amt__bar" type="range" id="fQtyBar" min="0" max="74" step="1" value="0" aria-label="주문 수량">
+ <div class="amt__ticks" aria-hidden="true">
+ <span style="--x:0">300</span><span style="--x:.2703">500</span><span style="--x:.5405">1,000</span><span style="--x:.8108">3,000</span><span style="--x:1">1만+</span>
+ </div>
+ </div>
+ <p class="qty__note" id="qtyNote" aria-live="polite">한 스타일 <b>100장</b>부터, 주문 합계는 <b>300장</b>부터입니다. 한 가지를 많이 만드실 필요가 없습니다.
       티셔츠 100장 + 맨투맨 100장 + 후드 100장처럼 나눠 담으시면 됩니다.</p>
  </div>
 
@@ -1176,7 +1176,7 @@
  내용
  <span class="fld__h">레퍼런스 링크를 넣어주시면 가장 빠릅니다</span>
  </div>
- <textarea class="in" id="fMemo" name="memo" placeholder="예) 이 사진이랑 비슷하게, 원단은 좀 더 두껍게 티셔츠 100장, 맨투맨 100장 정도 생각하고 있습니다.&#10;레퍼런스: https://..."></textarea>
+ <textarea class="in" id="fMemo" name="memo" placeholder="예) 이 사진이랑 비슷하게, 원단은 좀 더 두껍게 티셔츠 100장, 맨투맨 100장, 후드 100장 정도 생각하고 있습니다.&#10;레퍼런스: https://..."></textarea>
  </div>
 
  <div class="note" data-rv="fade">
@@ -1261,6 +1261,6 @@
  <a href="tel:01048231422" class="btn cbar__tel">전화 상담</a>
 </div>
 
-<script src="assets/js/site.js" defer></script>
+<script src="assets/js/site.js?v=20261013" defer></script>
 </body>
 </html>

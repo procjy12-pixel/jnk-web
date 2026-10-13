@@ -292,32 +292,92 @@
   const val = (id) => ($(id)?.value || '').trim();
   const checked = (name) => $$(`input[name="${name}"]:checked`).map((i) => i.value);
 
-  /* ── 수량 구간을 고르면 그 구간의 사실을 바로 말해 줍니다 ──
-     200~500 은 국내와 비용이 비슷합니다. 그걸 숨기지 않고 그 자리에서 알려 줍니다.
-     잘못된 문의가 줄고, 불리한 말도 하는 곳이라는 인상이 남습니다. */
+  /* ── 수량: 바(슬라이더) + 숫자 칸 ────────────────────────────
+     2026-10-13 대표님: "진짜 본인들이 만들어야하는 사이즈 입력하게 해. 바 만들어서 스크롤하게."
+     전에는 구간(200~499장)을 고르게 했습니다. 문의 메일에 구간만 찍혀서 실제로 몇 장인지 알 수 없었습니다.
+     이제 실제 수량을 받습니다. 주문 합계 300장부터입니다.
+
+     눈금은 구간마다 걸음이 다릅니다. 문의 대부분이 1,000장 아래라 그쪽을 촘촘하게 뒀습니다.
+     바 한 칸으로 못 맞추는 수량(320장, 12,000장)은 숫자 칸에 직접 적습니다.
+
+     수량을 정하면 그 구간의 사실을 그 자리에서 말해 줍니다. 300~500 은 국내와 비용이 비슷합니다.
+     그걸 숨기지 않으면 잘못된 문의가 줄고, 불리한 말도 하는 곳이라는 인상이 남습니다. */
+  const 최소 = 300;
+  const 눈금 = [];
+  for (let v = 300; v < 500; v += 10) 눈금.push(v);       //  300~ 490  10장씩
+  for (let v = 500; v < 1000; v += 25) 눈금.push(v);      //  500~ 975  25장씩
+  for (let v = 1000; v < 3000; v += 100) 눈금.push(v);    // 1000~2900 100장씩
+  for (let v = 3000; v <= 10000; v += 500) 눈금.push(v);  // 3000~10000 500장씩
+
+  const 수량칸 = $('#fQty');
+  const 수량바 = $('#fQtyBar');
+  const 수량띠 = $('#qtyBand');
   const 수량메모 = $('#qtyNote');
   const 기본메모 = 수량메모 ? 수량메모.innerHTML : '';
-  const 구간말 = {
-    '200~499장': ['', '이 구간은 <b>국내 생산과 비용이 비슷합니다.</b> 급하시면 국내로 가셔도 됩니다 — ' +
-      '그래도 저희가 나은 점은 품목을 잘게 나눌 수 있다는 것입니다.'],
-    '500~999장': ['is-up', '여기서부터 운임까지 포함해 <b>국내보다 20~30% 낮아집니다.</b> 사양에 따라 폭은 달라집니다.'],
-    '1,000~2,999장': ['is-up', '<b>국내 납품 업체 중 최저가 수준</b>입니다.'],
-    '3,000장 이상 (대량)': ['is-up', '4개국 라인으로 나눠 태웁니다. <b>국내 납품 업체 중 최저가 수준</b>입니다.'],
-  };
+  const 기본띠 = 수량띠 ? 수량띠.textContent : '';
+  const 눈금글 = $$('.amt__ticks span');
+  const 눈금시작 = [300, 500, 1000, 3000, 10000];
 
-  function 수량안내() {
-    if (!수량메모) return;
-    const 고른 = checked('qty')[0];
-    const 말 = 구간말[고른];
-    수량메모.classList.remove('is-on', 'is-up');
-    if (!말) { 수량메모.innerHTML = 기본메모; return; }
-    if (말[0]) 수량메모.classList.add(말[0]);
-    else 수량메모.classList.add('is-on');
-    수량메모.innerHTML = 말[1];
+  const 수량 = () => {
+    const n = parseInt((수량칸 ? 수량칸.value : '').replace(/[^\d]/g, ''), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const 수량글 = () => (수량() ? nf.format(수량()) + '장' : '');
+
+  // [띠 모양, 띠 글자, 메모 모양, 메모]
+  function 구간(n) {
+    if (!n) return ['', 기본띠, '', 기본메모];
+    if (n < 최소) return ['is-on', '300장부터 받습니다', 'is-on',
+      '주문 합계 <b>300장</b>부터 받습니다. 한 스타일은 100장부터라, 세 가지를 100장씩 담으셔도 300장이 됩니다.'];
+    if (n < 500) return ['is-on', '국내 생산과 비용이 비슷', 'is-on',
+      '이 구간은 <b>국내 생산과 비용이 비슷합니다.</b> 급하시면 국내로 가셔도 됩니다. ' +
+      '그래도 저희가 나은 점은 품목을 잘게 나눌 수 있다는 것입니다.'];
+    if (n < 1000) return ['is-up', '운임 포함 20~30% 낮아집니다', 'is-up',
+      '여기서부터 운임까지 포함해 <b>국내보다 20~30% 낮아집니다.</b> 사양에 따라 폭은 달라집니다.'];
+    if (n < 3000) return ['is-up', '국내 납품 업체 중 최저가 수준', 'is-up',
+      '<b>국내 납품 업체 중 최저가 수준</b>입니다.'];
+    return ['is-up', '대량 · 최저가 수준', 'is-up',
+      '4개국 라인으로 나눠 태웁니다. <b>국내 납품 업체 중 최저가 수준</b>입니다.'];
   }
 
-  $$('input[name="qty"]').forEach((el) => el.addEventListener('change', 수량안내));
-  수량안내();
+  function 수량그리기() {
+    if (!수량칸 || !수량바) return;
+    const n = 수량();
+    // 숫자 칸 너비 — 글자 수만큼. 고정 폭이면 '300' 옆이 휑하고 '12,000' 은 잘립니다
+    const 글 = 수량칸.value || 수량칸.placeholder || '0';
+    const 쉼표 = (글.match(/,/g) || []).length;
+    수량칸.style.width = Math.max(2.2, (글.length - 쉼표) * 0.95 + 쉼표 * 0.4 + 0.3) + 'ch';
+
+    // 바 위치 — 그 수량을 넘지 않는 가장 가까운 눈금
+    let i = 0;
+    if (n >= 최소) { while (i < 눈금.length - 1 && 눈금[i + 1] <= n) i++; }
+    수량바.value = String(i);
+    수량바.style.setProperty('--r', n >= 최소 ? (i / (눈금.length - 1)).toFixed(4) : '0');
+    수량바.setAttribute('aria-valuetext', n ? nf.format(n) + '장' : '아직 안 정함');
+
+    const [띠꼴, 띠글, 메모꼴, 메모] = 구간(n);
+    if (수량띠) { 수량띠.className = 'amt__band' + (띠꼴 ? ' ' + 띠꼴 : ''); 수량띠.textContent = 띠글; }
+    if (수량메모) { 수량메모.className = 'qty__note' + (메모꼴 ? ' ' + 메모꼴 : ''); 수량메모.innerHTML = 메모; }
+
+    let 켤 = -1;
+    if (n >= 최소) 눈금시작.forEach((v, k) => { if (n >= v) 켤 = k; });
+    눈금글.forEach((el, k) => el.classList.toggle('is-on', k === 켤));
+  }
+
+  if (수량칸 && 수량바) {
+    const 바에서 = () => { 수량칸.value = nf.format(눈금[Number(수량바.value)] || 최소); 수량그리기(); };
+    수량바.addEventListener('input', 바에서);
+    // 맨 왼쪽(300장)에 둔 채로 누르기만 하면 값이 안 바뀌어 input 이 안 옵니다. 그 경우에도 300장으로 받습니다
+    수량바.addEventListener('click', () => { if (!수량()) 바에서(); });
+    수량바.addEventListener('keyup', (e) => { if (!수량() && /^(Arrow|Home|End|Page)/.test(e.key)) 바에서(); });
+
+    수량칸.addEventListener('input', () => {
+      const 숫자 = 수량칸.value.replace(/[^\d]/g, '').replace(/^0+/, '').slice(0, 7);
+      수량칸.value = 숫자 ? nf.format(Number(숫자)) : '';
+      수량그리기();
+    });
+    수량그리기();
+  }
 
   function shake(el) {
     if (!el || reduce) return;
@@ -333,12 +393,12 @@
     L.push('[ J&K 견적 요청 ]');
     L.push('');
     L.push(`품목      ${checked('type').join(', ')}`);
-    L.push(`수량      ${checked('qty')[0] || ''}`);
+    L.push(`수량      ${수량글()}`);
     L.push(`희망 출고  ${checked('when')[0] || '미기재'}`);
     L.push('');
     L.push(`브랜드    ${val('#fBrand') || '미정'}`);
     L.push(`담당자    ${val('#fName')}`);
-    L.push(`연락처    ${val('#fTel')}`);
+    L.push(`연락처    ${전화꼴(val('#fTel'))}`);
     L.push(`이메일    ${val('#fMail') || '-'}`);
     const memo = val('#fMemo');
     if (memo) { L.push(''); L.push('내용'); L.push(memo); }
@@ -352,22 +412,37 @@
   /* 서버로 보냅니다. 실패하면 메일 앱 열기로 되돌아가므로 문의가 사라지지 않습니다. */
   /* 메일과 시트가 같은 내용을 써야 하므로 한 곳에서 만듭니다.
      따로 만들면 한쪽만 고쳐 놓고 왜 값이 다른지 찾게 됩니다. */
-  function buildPayload(body) {
-    return {
-      _subject: `[견적문의] ${val('#fBrand') || val('#fName')} — ${checked('qty')[0]}`,
+  /* 2026-10-13 대표님: "메일이 이따구라서 보기 힘들어."
+     전에는 칸마다 한 줄씩 적고 맨 밑에 같은 내용을 '요약' 으로 한 번 더 붙였습니다. 메일이 두 배로 길었습니다.
+     - 같은 내용을 두 번 보내지 않습니다 ('요약' 은 손님 화면의 완료 상자에만 씁니다)
+     - 안 적은 칸(이메일·내용)은 줄을 만들지 않습니다
+     - 무엇을 몇 장 만드는지부터 보이게 순서를 바꿨고, 제목에도 품목과 수량을 넣습니다
+     - 전화번호는 010-0000-0000 꼴로 맞춥니다. 메일 앱에서 눌러 걸기 쉽습니다 */
+  function 전화꼴(t) {
+    const d = t.replace(/[^\d]/g, '');
+    if (/^01\d{8,9}$/.test(d)) return d.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+    if (/^02\d{7,8}$/.test(d)) return d.replace(/^(02)(\d{3,4})(\d{4})$/, '$1-$2-$3');
+    if (/^0\d{9,10}$/.test(d)) return d.replace(/^(\d{3})(\d{3,4})(\d{4})$/, '$1-$2-$3');
+    return t;
+  }
+
+  function buildPayload() {
+    const 품목 = checked('type');
+    const 제목품목 = 품목.length > 2 ? `${품목.slice(0, 2).join(', ')} 외 ${품목.length - 2}` : 품목.join(', ');
+    const p = {
+      _subject: `[견적문의] ${val('#fBrand') || val('#fName')} · ${제목품목} · ${수량글()}`,
       _template: 'table',
       _captcha: 'false',
-      '품목': checked('type').join(', '),
-      '수량': checked('qty')[0] || '',
-      '희망 출고': checked('when')[0] || '미기재',
       '브랜드': val('#fBrand') || '미정',
+      '품목': 품목.join(', '),
+      '수량': 수량글(),
+      '희망 출고': checked('when')[0] || '미기재',
       '담당자': val('#fName'),
-      '연락처': val('#fTel'),
-      '이메일': val('#fMail') || '-',
-      '내용': val('#fMemo') || '-',
-      '요약': body,
-      ...(val('#fMail') ? { _replyto: val('#fMail') } : {})
+      '연락처': 전화꼴(val('#fTel')),
     };
+    if (val('#fMail')) { p['이메일'] = val('#fMail'); p._replyto = val('#fMail'); }
+    if (val('#fMemo')) p['내용'] = val('#fMemo');
+    return p;
   }
 
   async function sendTo(to, payload) {
@@ -475,8 +550,13 @@
       shake($('#pickType')); $('#pickType').scrollIntoView({ block: 'center', behavior: smooth() });
       return;
     }
-    if (!checked('qty').length) {
-      errEl.textContent = '수량 구간을 골라주세요.';
+    if (!수량()) {
+      errEl.textContent = '수량을 정해 주세요. 바를 움직이거나 숫자를 적으시면 됩니다.';
+      shake($('#pickQty')); $('#pickQty').scrollIntoView({ block: 'center', behavior: smooth() });
+      return;
+    }
+    if (수량() < 최소) {
+      errEl.textContent = '주문 합계 300장부터 받습니다.';
       shake($('#pickQty')); $('#pickQty').scrollIntoView({ block: 'center', behavior: smooth() });
       return;
     }
@@ -495,7 +575,7 @@
     btn.disabled = true;
     btn.textContent = '보내는 중…';
 
-    const payload = buildPayload(body);
+    const payload = buildPayload();
     const ok = await send(payload);
 
     // 기록은 메일 결과와 함께 남깁니다. 메일이 실패해도 원장에 남았으면
