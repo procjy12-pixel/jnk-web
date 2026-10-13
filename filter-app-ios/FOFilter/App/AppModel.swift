@@ -1,3 +1,4 @@
+import AppIntents
 import Foundation
 import Photos
 import SwiftUI
@@ -9,8 +10,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var entries: [LutEntry] = []
     @Published private(set) var recent: [Settings] = []
     @Published private(set) var loaded = false
-    @Published var settings: Settings { didSet { if settings != oldValue { store.current = settings; rebuildGrade() } } }
-    @Published var watermark: Watermark { didSet { if watermark != oldValue { store.watermark = watermark } } }
+    @Published var settings: Settings { didSet { if settings != oldValue { store.current = settings; rebuildGrade(); shareWithLockCamera() } } }
+    @Published var watermark: Watermark { didSet { if watermark != oldValue { store.watermark = watermark; shareWithLockCamera() } } }
+    /// 화면에 잠깐 띄울 알림 (잠금화면 사진 옮김 등)
+    @Published var notice: String?
     /// 지금 설정을 구운 렌더링 값 (카메라가 씀)
     @Published private(set) var grade = PreparedGrade.none
 
@@ -38,8 +41,24 @@ final class AppModel: ObservableObject {
                     self.settings.lutKey = Look.original.key; self.settings.lutName = Look.original.label
                 }
                 self.rebuildGrade()
+                self.shareWithLockCamera()
             }
         }
+    }
+
+    /// 잠금화면 카메라에서: 앱이 넘겨 준 설정으로
+    func apply(lockContext c: LockCameraContext) {
+        settings = c.settings
+        watermark = c.watermark
+    }
+
+    private static let isExtension = Bundle.main.bundlePath.hasSuffix(".appex")
+
+    /// 잠금화면 카메라도 지금 설정(LUT·프레임·워터마크)으로 찍게 넘겨 둠 (iOS 18+)
+    private func shareWithLockCamera() {
+        guard !Self.isExtension, #available(iOS 18.0, *) else { return }
+        let c = LockCameraContext(settings: settings, watermark: watermark)
+        Task.detached { try? await FOFilterCaptureIntent.updateAppContext(c) }
     }
 
     func reloadUserLuts() {

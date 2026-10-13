@@ -11,8 +11,9 @@ LUT·글꼴 파일은 안드로이드판(`filter-app-android/app/src/main/assets
   - LUT·최근 설정을 카메라 화면 아래 줄에서 바로 바꿈, 프레임 메뉴
   - 사진은 원본 해상도로 처리해 사진 앱에 저장. 썸네일을 누르면 방금 찍은 원본을 편집 화면에서 다시 손봄
 - **잠금화면 버튼 (iOS 18+)**: 잠금화면을 길게 눌러 사용자화 > 잠금 화면 > 오른쪽 아래 카메라 버튼의 − 를 눌러 빼고
-  ＋ 에서 'FOFilter 카메라' 를 넣으면, 누를 때 FOFilter 카메라가 열림 (Face ID 로 잠금 해제 후).
-  같은 컨트롤을 제어 센터·동작 버튼(15 Pro 이상)에도 넣을 수 있음
+  ＋ 에서 'FOFilter 카메라' 를 넣으면, **잠금을 풀지 않고** 기본 카메라처럼 FOFilter 카메라가 뜸 (지금 LUT·프레임·워터마크 그대로).
+  잠긴 동안 찍은 사진은 잠금화면 보관함에 있다가 FOFilter 를 열면 사진 앱으로 옮겨짐 (애플 정책상 잠긴 채로는 사진 앱에 못 넣음).
+  잠금화면 카메라에선 촬영만 되고 앨범·편집·영상은 '앱 열기'(잠금 해제 후). 같은 컨트롤을 제어 센터·동작 버튼에도 넣을 수 있음
 - **영상**: "영상" 으로 바꾸고 빨간 버튼 → 필터를 입힌 화면 그대로 녹화(소리 포함) → 사진 앱에 저장
 - **열기**: 사진 앱에서 사진·영상을 골라 편집 (영상은 저장할 때 영상 전체에 적용, HDR 영상은 SDR 로)
 - **편집 화면**
@@ -42,7 +43,8 @@ LUT·글꼴 파일은 안드로이드판(`filter-app-android/app/src/main/assets
 | `Render/Renderer.swift` | Core Image 파이프라인 (자르기 → LUT → 비네팅·그레인 → 워터마크), Metal 미리보기 |
 | `Camera/CameraController.swift` | AVFoundation 카메라, 사진, 필터 입힌 영상 녹화(AVAssetWriter) |
 | `Editor/*` | 편집 화면, 영상 내보내기(AVVideoComposition + Core Image) |
-| `Controls/` · `Shared/` | 잠금화면·제어 센터 컨트롤 (WidgetKit ControlWidget, iOS 18+) |
+| `Controls/` · `Shared/` | 잠금화면·제어 센터 컨트롤 (ControlWidget + CameraCaptureIntent, iOS 18+) |
+| `LockCamera/` | 잠금화면 카메라 확장 (LockedCameraCapture, 앱의 카메라 화면을 그대로 씀) |
 
 `Engine` 폴더는 Foundation 만 써서 리눅스의 Swift 로도 테스트할 수 있습니다.
 

@@ -13,11 +13,12 @@ struct FOFilterControlsBundle: WidgetBundle {
 struct OpenCameraControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "kr.co.jnkcorp.fofilter.camera") {
-            ControlWidgetButton(action: OpenFOFilterCameraIntent()) {
+            // 카메라 동작이라 잠겨 있으면 잠금화면 카메라가 잠금 해제 없이 바로 뜸
+            ControlWidgetButton(action: FOFilterCaptureIntent()) {
                 Label("FOFilter", systemImage: "camera.filters")
             }
         }
         .displayName("FOFilter 카메라")
-        .description("필터를 입힌 FOFilter 카메라를 바로 엽니다.")
+        .description("잠금을 풀지 않고 필터를 입힌 FOFilter 카메라로 바로 찍어요.")
     }
 }

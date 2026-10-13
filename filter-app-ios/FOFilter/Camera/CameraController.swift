@@ -28,6 +28,8 @@ final class CameraController: NSObject, ObservableObject {
 
     /// 마지막에 찍은 원본 (편집 화면에서 다시 손볼 때)
     private(set) var lastOriginal: CIImage?
+    /// 찍은 사진 저장 (보통은 사진 앱, 잠금화면 카메라에선 잠금화면 보관함)
+    var saveImage: (Data) async throws -> Void = { try await PhotoSaver.save(imageData: $0) }
     /// 사진을 다 저장했을 때 (최근 설정에 넣기)
     var onSaved: (@MainActor (Settings) -> Void)?
 
@@ -363,7 +365,7 @@ final class CameraController: NSObject, ObservableObject {
             let thumb = r.uiImage(out, maxSide: 240)
             Task {
                 do {
-                    try await PhotoSaver.save(imageData: jpeg)
+                    try await self.saveImage(jpeg)
                     await MainActor.run {
                         self.lastOriginal = img
                         self.lastThumb = thumb

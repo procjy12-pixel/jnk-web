@@ -9,6 +9,11 @@ struct CameraView: View {
     @EnvironmentObject var app: AppModel
     @StateObject private var cam = CameraController()
     @Environment(\.scenePhase) private var phase
+    @Environment(\.openURL) private var openURL
+    /// 잠금화면 카메라로 열렸으면 (앨범·편집·영상 없이 촬영만)
+    let lock: CameraLockMode?
+
+    init(lock: CameraLockMode? = nil) { self.lock = lock }
     @State private var editor: EditorItem?
     @State private var pick: PhotosPickerItem?
     @State private var showExposure = false
@@ -28,12 +33,14 @@ struct CameraView: View {
         .onAppear {
             app.load()
             cam.onSaved = { s in app.pushRecent(s) }
+            if let lock { cam.saveImage = lock.save }
             cam.update(settings: app.settings, grade: app.grade, watermark: app.watermark)
             cam.start()
         }
         .onReceive(app.$grade) { g in cam.update(settings: app.settings, grade: g, watermark: app.watermark) }
         .onReceive(app.$watermark) { w in cam.update(settings: app.settings, grade: app.grade, watermark: w) }
         .onReceive(app.$settings) { s in cam.update(settings: s, grade: app.grade, watermark: app.watermark) }
+        .onReceive(app.$notice) { n in if let n { cam.message = n; app.notice = nil } }
         .onChange(of: phase) { p in
             if p == .active && editor == nil { cam.resume() } else if p != .active { cam.pause() }
         }
@@ -75,11 +82,15 @@ struct CameraView: View {
                     .padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(Color.white.opacity(0.12)))
             }
             Spacer()
-            Picker("", selection: Binding(get: { cam.mode }, set: { cam.setMode($0) })) {
-                Text("사진").tag(CameraController.Mode.photo)
-                Text("영상").tag(CameraController.Mode.video)
+            if lock == nil {
+                Picker("", selection: Binding(get: { cam.mode }, set: { cam.setMode($0) })) {
+                    Text("사진").tag(CameraController.Mode.photo)
+                    Text("영상").tag(CameraController.Mode.video)
+                }
+                .pickerStyle(.segmented).frame(width: 120).disabled(cam.isRecording)
+            } else {
+                Label("잠금화면", systemImage: "lock.fill").font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.7))
             }
-            .pickerStyle(.segmented).frame(width: 120).disabled(cam.isRecording)
             Button { showExposure.toggle() } label: {
                 Image(systemName: "plusminus.circle").frame(width: 32, height: 32)
                     .foregroundStyle(cam.exposureBias == 0 ? Color.white : accent)
@@ -98,7 +109,7 @@ struct CameraView: View {
                 if cam.authorized == false {
                     VStack(spacing: 12) {
                         Text("카메라 권한이 있어야 앱 카메라를 쓸 수 있어요").foregroundStyle(.white)
-                        Button("설정 열기") { if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) } }
+                        Button("설정 열기") { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } }
                             .buttonStyle(.borderedProminent).tint(accent)
                         Text("앨범에서 사진·영상을 불러와 편집할 수는 있어요").font(.footnote).foregroundStyle(.gray)
                     }
@@ -180,6 +191,7 @@ struct CameraView: View {
     private var bottomBar: some View {
         HStack {
             Button {
+                if let lock { lock.openApp(); return }
                 if let img = cam.lastOriginal { cam.pause(); editor = EditorItem(source: .photo(img)) }
             } label: {
                 ZStack {
@@ -190,14 +202,16 @@ struct CameraView: View {
                 .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             Spacer()
-            // photoLibrary 를 주면 원본 사진 ID 가 같이 와서 '원본에 덮어쓰기' 가 됨
-            PhotosPicker(selection: $pick, matching: .any(of: [.images, .videos]), photoLibrary: .shared()) {
-                VStack(spacing: 2) {
-                    if loadingPick { ProgressView().tint(.white) } else { Image(systemName: "photo.on.rectangle").font(.title3) }
-                    Text("열기").font(.caption2)
-                }.foregroundStyle(.white).frame(width: 52)
+            if lock == nil {
+                // photoLibrary 를 주면 원본 사진 ID 가 같이 와서 '원본에 덮어쓰기' 가 됨
+                PhotosPicker(selection: $pick, matching: .any(of: [.images, .videos]), photoLibrary: .shared()) {
+                    VStack(spacing: 2) {
+                        if loadingPick { ProgressView().tint(.white) } else { Image(systemName: "photo.on.rectangle").font(.title3) }
+                        Text("열기").font(.caption2)
+                    }.foregroundStyle(.white).frame(width: 52)
+                }
+                Spacer()
             }
-            Spacer()
             ShutterButton(video: cam.mode == .video, recording: cam.isRecording) {
                 if cam.mode == .video { cam.toggleRecording() } else { cam.capturePhoto() }
             }
@@ -210,11 +224,16 @@ struct CameraView: View {
             .disabled(cam.isRecording)
             Spacer()
             Button {
+                // 잠금화면에선 앱을 열어서 (잠금 해제 후) 편집
+                if let lock { lock.openApp(); return }
                 if let img = cam.lastOriginal { cam.pause(); editor = EditorItem(source: .photo(img)) }
                 else { cam.message = "먼저 찍거나 ‘열기’로 사진·영상을 고르세요" }
             } label: {
-                VStack(spacing: 2) { Image(systemName: "slider.horizontal.3").font(.title3); Text("편집").font(.caption2) }
-                    .foregroundStyle(.white).frame(width: 52)
+                VStack(spacing: 2) {
+                    Image(systemName: lock == nil ? "slider.horizontal.3" : "arrow.up.forward.app").font(.title3)
+                    Text(lock == nil ? "편집" : "앱 열기").font(.caption2)
+                }
+                .foregroundStyle(.white).frame(width: 52)
             }
         }
         .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 12)
