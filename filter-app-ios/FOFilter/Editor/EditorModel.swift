@@ -13,15 +13,17 @@ struct EditorItem: Identifiable {
 
     let id = UUID()
     let source: Source
+    /// 사진 앱 원본 (있으면 원본에 덮어쓰기 가능). 카메라로 바로 찍어 편집하는 사진은 없음.
+    var assetID: String? = nil
 
     static func load(_ item: PhotosPickerItem) async -> EditorItem? {
         if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) {
             guard let m = try? await item.loadTransferable(type: PickedMovie.self) else { return nil }
-            return EditorItem(source: .video(m.url))
+            return EditorItem(source: .video(m.url), assetID: item.itemIdentifier)
         }
         guard let data = try? await item.loadTransferable(type: Data.self),
               let img = CIImage(data: data, options: [.applyOrientationProperty: true]) else { return nil }
-        return EditorItem(source: .photo(img))
+        return EditorItem(source: .photo(img), assetID: item.itemIdentifier)
     }
 }
 
@@ -44,6 +46,8 @@ struct PickedMovie: Transferable {
 final class EditorModel: ObservableObject {
     let item: EditorItem
     var isVideo: Bool { if case .video = item.source { return true }; return false }
+    /// 원본에 덮어쓸 수 있는지 (사진 앱에서 연 사진·영상)
+    var canOverwrite: Bool { item.assetID != nil }
 
     @Published var settings = Settings() { didSet { if settings != oldValue { scheduleRender() } } }
     @Published private(set) var preview: UIImage?
@@ -229,10 +233,12 @@ final class EditorModel: ObservableObject {
 
     // MARK: 저장
 
-    func save(watermark: Watermark) {
+    /// `overwrite` 면 사진 앱의 원본에 덮어씀 (사진 앱 '편집 > 복귀' 로 되돌릴 수 있음), 아니면 새 파일
+    func save(watermark: Watermark, overwrite: Bool) {
         guard progress == nil, let app else { return }
         let s = settings
         let lut = baseLut(s)
+        let target = overwrite ? item.assetID : nil
         switch item.source {
         case .photo:
             guard let full else { return }
@@ -246,10 +252,15 @@ final class EditorModel: ObservableObject {
                 Task { @MainActor in
                     do {
                         guard let jpeg else { throw CocoaError(.fileWriteUnknown) }
-                        try await PhotoSaver.save(imageData: jpeg)
-                        self.saved(s, app: app, what: "사진")
+                        if let target {
+                            try await PhotoSaver.overwrite(assetID: target, imageData: jpeg, settings: s)
+                            self.saved(s, app: app, text: "원본 사진에 덮어썼어요 (사진 앱 '편집 > 복귀' 로 되돌릴 수 있어요)")
+                        } else {
+                            try await PhotoSaver.save(imageData: jpeg)
+                            self.saved(s, app: app, text: "사진을 새 파일로 저장했어요")
+                        }
                     } catch {
-                        self.message = "저장 실패: \(error.localizedDescription)"
+                        self.message = (target != nil ? "원본에 덮어쓰지 못했어요: " : "저장 실패: ") + error.localizedDescription
                     }
                     self.progress = nil
                 }
@@ -262,20 +273,26 @@ final class EditorModel: ObservableObject {
                     let out = try await VideoExporter.export(url: url, settings: s, grade: g, watermark: watermark) { p in
                         Task { @MainActor in self.progress = p }
                     }
-                    try await PhotoSaver.save(videoURL: out)
-                    self.saved(s, app: app, what: "영상")
+                    if let target {
+                        defer { try? FileManager.default.removeItem(at: out) }
+                        try await PhotoSaver.overwrite(assetID: target, videoURL: out, settings: s)
+                        self.saved(s, app: app, text: "원본 영상에 덮어썼어요 (사진 앱 '편집 > 복귀' 로 되돌릴 수 있어요)")
+                    } else {
+                        try await PhotoSaver.save(videoURL: out)
+                        self.saved(s, app: app, text: "영상을 새 파일로 저장했어요")
+                    }
                 } catch {
-                    self.message = "저장 실패: \(error.localizedDescription)"
+                    self.message = (target != nil ? "원본에 덮어쓰지 못했어요: " : "저장 실패: ") + error.localizedDescription
                 }
                 self.progress = nil
             }
         }
     }
 
-    private func saved(_ s: Settings, app: AppModel, what: String) {
+    private func saved(_ s: Settings, app: AppModel, text: String) {
         app.settings = s
         app.pushRecent(s)
-        message = "\(what)을 사진 앱에 저장했어요"
+        message = text
     }
 
     /// 닫을 때 마지막 설정을 카메라에도

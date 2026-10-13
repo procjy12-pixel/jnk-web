@@ -54,7 +54,11 @@ class MainActivity : Activity() {
     private lateinit var library: LutLibrary
 
     // 사진
-    private var sourceUri: Uri? = null
+    private var sourceUri: Uri? = null       // 디코드할 곳 (원본에 덮어쓴 뒤엔 앱 캐시의 원본 사본)
+    private var pickedUri: Uri? = null       // 처음 연 주소
+    private var editTarget: Originals.Target? = null   // 덮어쓸 수 있는 갤러리 원본
+    private var pendingOverwrite: (() -> Unit)? = null
+    private enum class SaveMode { NEW, OVERWRITE }
     private var captureUri: Uri? = null
     private var previewFull: Bitmap? = null   // 자르기 전 미리보기
     private var isVideo = false               // 지금 연 게 영상인지 (미리보기는 영상의 한 장면)
@@ -285,7 +289,7 @@ class MainActivity : Activity() {
     private fun maybeAutoSave() {
         if (autoSaveNext && ready && preview != null) {
             autoSaveNext = false
-            savePhoto()
+            savePhoto(SaveMode.NEW)
         }
     }
 
@@ -321,7 +325,7 @@ class MainActivity : Activity() {
         }, LinearLayout.LayoutParams(0, -2, 1f))
         bar.addView(pill("촬영") { capture() })
         bar.addView(pill("열기") { pick(REQ_PICK) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6) })
-        bar.addView(pill("저장", filled = true) { savePhoto() },
+        bar.addView(pill("저장", filled = true) { askSave() },
             LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6) })
         root.addView(bar)
 
@@ -964,6 +968,12 @@ class MainActivity : Activity() {
             data?.data?.let { autoSaveNext = false; load(it) }
             return
         }
+        if (requestCode == REQ_WRITE) {
+            val next = pendingOverwrite
+            pendingOverwrite = null
+            if (resultCode == RESULT_OK) next?.invoke() else toast("원본 덮어쓰기를 취소했어요")
+            return
+        }
         if (requestCode == REQ_CAMERA) {
             val uri = captureUri ?: return
             captureUri = null
@@ -984,9 +994,14 @@ class MainActivity : Activity() {
 
     private fun load(uri: Uri) {
         sourceUri = uri
+        pickedUri = uri
+        editTarget = null
         hint.visibility = View.VISIBLE
         hint.text = "불러오는 중…"
         bg.execute {
+            Originals.clearCopies(this)
+            val target = Originals.find(this, uri)
+            main.post { if (pickedUri == uri) editTarget = target }
             val video = runCatching { contentResolver.getType(uri)?.startsWith("video/") }.getOrNull() == true
             val info = if (video) VideoExport.info(this, uri) else null
             val bmp = try {
@@ -1138,9 +1153,53 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun savePhoto() {
-        if (isVideo) { saveVideo(); return }
+    /** 저장할 때마다: 원본에 덮어쓸지, 새 파일로 저장할지 */
+    private fun askSave() {
+        if (sourceUri == null || preview == null) { toast("먼저 사진을 여세요"); return }
+        val what = if (isVideo) "영상" else "사진"
+        val target = editTarget
+        val b = AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+            .setTitle("$what 저장")
+            .setPositiveButton("새 파일로 저장") { _, _ -> savePhoto(SaveMode.NEW) }
+            .setNegativeButton("취소", null)
+        if (target != null) {
+            b.setMessage("원본 파일에 덮어쓸까요, 새 파일로 저장할까요?\n\n원본에 덮어쓰면 원래 ${what}은 되돌릴 수 없어요.")
+                .setNeutralButton("원본에 덮어쓰기") { _, _ -> overwrite(target) }
+        } else {
+            b.setMessage("이 ${what}은 원본 파일 위치를 알 수 없어서 새 파일로만 저장할 수 있어요.")
+        }
+        b.show()
+    }
+
+    /** 원본 덮어쓰기: 필요하면 안드로이드의 "수정 허용" 을 먼저 받고 저장 */
+    private fun overwrite(target: Originals.Target) {
+        bg.execute {
+            val sender = try {
+                Originals.permission(this, target.uri)
+            } catch (e: Exception) {
+                main.post { toast("원본에 덮어쓸 수 없어요. 새 파일로 저장해 주세요") }
+                return@execute
+            }
+            main.post {
+                if (sender == null) { savePhoto(SaveMode.OVERWRITE); return@post }
+                pendingOverwrite = { savePhoto(SaveMode.OVERWRITE) }
+                try {
+                    startIntentSenderForResult(sender, REQ_WRITE, null, 0, 0, 0)
+                } catch (e: Exception) {
+                    pendingOverwrite = null
+                    toast("원본에 덮어쓸 수 없어요. 새 파일로 저장해 주세요")
+                }
+            }
+        }
+    }
+
+    private class NotSameFile : Exception()
+
+    private fun savePhoto(mode: SaveMode) {
+        if (isVideo) { saveVideo(mode); return }
         val uri = sourceUri ?: run { toast("먼저 사진을 여세요"); return }
+        val target = if (mode == SaveMode.OVERWRITE) editTarget ?: return else null
+        val picked = pickedUri
         val prev = preview ?: return
         val grade = currentGrade()
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
@@ -1163,11 +1222,22 @@ class MainActivity : Activity() {
                 val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                 out.setPixels(px, 0, w, 0, 0, w, h)
                 if (wm.enabled) WatermarkPainter.draw(this, Canvas(out), 0f, 0f, w.toFloat(), h.toFloat(), wm)
-                writeToGallery(out, name) != null
+                if (target != null) {
+                    if (target.checkSame && (picked == null || !Originals.same(this, picked, target.uri))) throw NotSameFile()
+                    // 원본 사본을 남겨 두고 덮어씀 → 계속 편집해도 필터가 두 번 입혀지지 않음
+                    val copy = Originals.keepCopy(this, uri)
+                    Originals.writeImage(this, target.uri, out)
+                    main.post { if (pickedUri == picked) sourceUri = copy }
+                    "원본 사진에 덮어썼어요"
+                } else {
+                    if (writeToGallery(out, name) != null) "갤러리 Pictures/FOFilter 에 저장했습니다" else null
+                }
+            } catch (e: NotSameFile) {
+                "고른 사진과 갤러리 원본이 달라 덮어쓰지 않았어요. 새 파일로 저장해 주세요"
             } catch (e: Throwable) {
-                false
+                null
             }
-            main.post { toast(if (ok) "갤러리 Pictures/FOFilter 에 저장했습니다" else "저장하지 못했습니다") }
+            main.post { toast(ok ?: if (target != null) "원본에 덮어쓰지 못했어요" else "저장하지 못했습니다") }
         }
     }
 
@@ -1175,9 +1245,27 @@ class MainActivity : Activity() {
 
     /** 영상 전체에 지금 설정을 입혀 Movies/FOFilter 로 (그레인·마스크는 영상엔 안 들어감) */
     @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-    private fun saveVideo() {
+    private fun saveVideo(mode: SaveMode) {
         val uri = sourceUri ?: return
         if (videoJob != null) { toast("이미 영상을 처리하는 중이에요"); return }
+        val target = if (mode == SaveMode.OVERWRITE) editTarget ?: return else null
+        if (target != null && target.checkSame) {
+            // 사진 선택기 주소에서 찾은 원본이면 같은 파일인지 먼저 확인
+            val picked = pickedUri
+            bg.execute {
+                val same = picked != null && Originals.same(this, picked, target.uri)
+                main.post {
+                    if (same) startVideoExport(uri, target.uri)
+                    else toast("고른 영상과 갤러리 원본이 달라 덮어쓰지 않았어요. 새 파일로 저장해 주세요")
+                }
+            }
+            return
+        }
+        startVideoExport(uri, target?.uri)
+    }
+
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private fun startVideoExport(uri: Uri, overwrite: Uri?) {
         val g = currentGrade()
         val grade = Grade(g.lut, 1f, 0f, g.vignette)
         val name = if (makerMode) "CUSTOM" else (selected?.name ?: "LUT")
@@ -1194,11 +1282,20 @@ class MainActivity : Activity() {
             .setNegativeButton("취소") { _, _ -> videoJob?.transformer?.cancel(); videoJob?.output?.delete(); videoJob = null }
             .show()
         videoJob = VideoExport.export(applicationContext, uri, grade, frame, frameFlip, cropX, cropY, watermark, name,
+            overwrite = overwrite,
             onProgress = { p -> progress.text = "필터 입히는 중 $p%" },
             onDone = { saved, err ->
                 videoJob = null
                 runCatching { dialog.dismiss() }
-                toast(if (saved != null) "Movies/FOFilter 에 영상을 저장했어요" else "영상 저장 실패: ${err ?: ""}")
+                when {
+                    saved == null -> toast("영상 저장 실패: ${err ?: ""}")
+                    overwrite != null -> {
+                        // 원본이 바뀌었으니 같은 영상에 필터가 두 번 입혀지지 않게 이 편집은 닫음
+                        sourceUri = null
+                        toast("원본 영상에 덮어썼어요. 다시 편집하려면 새로 여세요")
+                    }
+                    else -> toast("Movies/FOFilter 에 영상을 저장했어요")
+                }
             })
         if (videoJob == null) runCatching { dialog.dismiss() }
     }
@@ -1729,6 +1826,7 @@ class MainActivity : Activity() {
         private const val REQ_CAMERA = 4
         private const val REQ_APP_CAMERA = 5
         private const val REQ_PERM_SYSTEM = 6
+        private const val REQ_WRITE = 7
         private const val KEY_CAPTURE = "capture"
         private const val KEY_AUTOSAVE = "autosave"
         private const val PREVIEW_MAX = 1400

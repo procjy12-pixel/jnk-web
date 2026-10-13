@@ -112,11 +112,12 @@ object VideoExport {
     class Job(val transformer: Transformer, val output: File)
 
     /**
-     * [input] 영상을 처리해 Movies/FOFilter 에 저장. [onProgress] 0..100, [onDone] 저장된 주소(실패면 null)와 오류 글.
+     * [input] 영상을 처리해 Movies/FOFilter 에 저장 ([overwrite] 가 있으면 그 원본에 덮어씀).
+     * [onProgress] 0..100, [onDone] 저장된 주소(실패면 null)와 오류 글.
      */
     fun export(
         ctx: Context, input: Uri, grade: Grade, frame: Frame, flip: Boolean, cropX: Float, cropY: Float,
-        watermark: Watermark, tag: String,
+        watermark: Watermark, tag: String, overwrite: Uri? = null,
         onProgress: (Int) -> Unit, onDone: (Uri?, String?) -> Unit,
     ): Job? {
         val inf = info(ctx, input) ?: run { onDone(null, "영상 정보를 읽을 수 없어요"); return null }
@@ -147,7 +148,9 @@ object VideoExport {
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, result: ExportResult) {
                     Thread {
-                        val saved = try { publish(ctx, out, tag) } catch (e: Throwable) { null }
+                        val saved = try {
+                            if (overwrite != null) overwrite.also { Originals.writeFile(ctx, it, out) } else publish(ctx, out, tag)
+                        } catch (e: Throwable) { null }
                         out.delete()
                         main.post { onDone(saved, if (saved == null) "갤러리에 저장하지 못했어요" else null) }
                     }.start()

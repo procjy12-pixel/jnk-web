@@ -25,6 +25,7 @@ struct EditorView: View {
     @State private var showImporter = false
     @State private var share: ShareItem?
     @State private var askName = false
+    @State private var askSave = false
     @State private var newName = ""
 
     init(item: EditorItem) { _model = StateObject(wrappedValue: EditorModel(item: item)) }
@@ -63,8 +64,20 @@ struct EditorView: View {
             Spacer()
             Text(model.isVideo ? "영상 편집" : "사진 편집").font(.headline)
             Spacer()
-            Button { model.save(watermark: app.watermark) } label: { Text("저장").bold().foregroundStyle(accent) }
+            Button { askSave = true } label: { Text("저장").bold().foregroundStyle(accent) }
                 .disabled(model.preview == nil || model.progress != nil)
+                // 저장할 때마다: 원본에 덮어쓸지, 새 파일로 저장할지
+                .confirmationDialog(model.isVideo ? "영상 저장" : "사진 저장", isPresented: $askSave, titleVisibility: .visible) {
+                    Button("새 파일로 저장") { model.save(watermark: app.watermark, overwrite: false) }
+                    if model.canOverwrite {
+                        Button("원본에 덮어쓰기", role: .destructive) { model.save(watermark: app.watermark, overwrite: true) }
+                    }
+                    Button("취소", role: .cancel) {}
+                } message: {
+                    Text(model.canOverwrite
+                         ? "원본 파일에 덮어쓸까요, 새 파일로 저장할까요?\n덮어써도 사진 앱의 '편집 > 복귀'로 원래대로 돌릴 수 있어요."
+                         : "카메라로 바로 찍어 편집하는 사진은 원본 파일이 따로 없어서 새 파일로 저장해요.")
+                }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
     }

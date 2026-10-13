@@ -190,7 +190,8 @@ struct CameraView: View {
                 .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             Spacer()
-            PhotosPicker(selection: $pick, matching: .any(of: [.images, .videos])) {
+            // photoLibrary 를 주면 원본 사진 ID 가 같이 와서 '원본에 덮어쓰기' 가 됨
+            PhotosPicker(selection: $pick, matching: .any(of: [.images, .videos]), photoLibrary: .shared()) {
                 VStack(spacing: 2) {
                     if loadingPick { ProgressView().tint(.white) } else { Image(systemName: "photo.on.rectangle").font(.title3) }
                     Text("열기").font(.caption2)

@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0"
+    MARKETING_VERSION: "1.1"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   FOFilter:
@@ -39,6 +39,7 @@ targets:
         NSCameraUsageDescription: 필터를 입힌 화면을 보면서 사진·영상을 찍기 위해 카메라를 씁니다.
         NSMicrophoneUsageDescription: 영상을 찍을 때 소리를 함께 녹음합니다.
         NSPhotoLibraryAddUsageDescription: 필터를 입힌 사진·영상을 사진 앱에 저장합니다.
+        NSPhotoLibraryUsageDescription: ‘원본에 덮어쓰기’ 를 고르면 사진 앱의 원본을 편집본으로 바꿉니다 (사진 앱에서 되돌릴 수 있어요).
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: kr.co.jnkcorp.fofilter

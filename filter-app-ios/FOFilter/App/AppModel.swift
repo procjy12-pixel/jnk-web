@@ -1,6 +1,7 @@
 import Foundation
 import Photos
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 카메라와 편집 화면이 같이 쓰는 상태: LUT 목록 · 지금 설정(앱을 껐다 켜도 유지) · 최근 3개 · 워터마크
 @MainActor
@@ -95,6 +96,57 @@ enum PhotoSaver {
         try await authorize()
         try await PHPhotoLibrary.shared().performChanges {
             PHAssetCreationRequest.forAsset().addResource(with: .photo, data: imageData, options: nil)
+        }
+    }
+
+    enum OverwriteError: LocalizedError {
+        case noAccess, notFound, notEditable, failed
+        var errorDescription: String? {
+            switch self {
+            case .noAccess: "사진 앱 접근 권한이 있어야 원본에 덮어쓸 수 있어요 (설정 > FOFilter > 사진 > 전체 접근)"
+            case .notFound: "원본을 찾을 수 없어요 (권한이 ‘선택한 사진’ 이면 이 사진도 선택해 주세요)"
+            case .notEditable: "이 항목은 수정할 수 없어요"
+            case .failed: "원본을 열지 못했어요"
+            }
+        }
+    }
+
+    private static func editableAsset(_ id: String) async throws -> PHAsset {
+        let s = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+        guard s == .authorized || s == .limited else { throw OverwriteError.noAccess }
+        guard let a = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { throw OverwriteError.notFound }
+        guard a.canPerform(.content) else { throw OverwriteError.notEditable }
+        return a
+    }
+
+    private static func editingInput(_ a: PHAsset) async throws -> PHContentEditingInput {
+        try await withCheckedThrowingContinuation { c in
+            let o = PHContentEditingInputRequestOptions()
+            o.isNetworkAccessAllowed = true          // iCloud 에만 있는 원본도
+            o.canHandleAdjustmentData = { _ in false }
+            _ = a.requestContentEditingInput(with: o) { input, info in
+                if let input { c.resume(returning: input) }
+                else { c.resume(throwing: (info[PHContentEditingInputErrorKey] as? Error) ?? OverwriteError.failed) }
+            }
+        }
+    }
+
+    /// 사진 앱의 원본에 덮어쓰기. 사진 앱의 '편집' 으로 저장되어 '편집 > 복귀' 로 되돌릴 수 있습니다.
+    static func overwrite(assetID: String, imageData: Data? = nil, videoURL: URL? = nil, settings: Settings) async throws {
+        let asset = try await editableAsset(assetID)
+        let input = try await editingInput(asset)
+        let output = PHContentEditingOutput(contentEditingInput: input)
+        output.adjustmentData = PHAdjustmentData(formatIdentifier: "kr.co.jnkcorp.fofilter", formatVersion: "1.0",
+                                                 data: (try? JSONEncoder().encode(settings)) ?? Data())
+        if let imageData {
+            let url: URL
+            if #available(iOS 17, *) { url = try output.renderedContentURL(for: .jpeg) } else { url = output.renderedContentURL }
+            try imageData.write(to: url)
+        } else if let videoURL {
+            try FileManager.default.copyItem(at: videoURL, to: output.renderedContentURL)
+        }
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetChangeRequest(for: asset).contentEditingOutput = output
         }
     }
 
