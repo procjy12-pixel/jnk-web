@@ -2,6 +2,7 @@ package kr.co.jnkcorp.filter
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.KeyguardManager
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -143,6 +144,11 @@ class CameraActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashReport.step(this, "camera:create")
+        keyguard = getSystemService(KeyguardManager::class.java)
+        // 편집 화면에서 연 게 아니면(잠금화면 바로가기·다른 앱의 카메라 호출) 혼자 열린 것
+        standalone = callingActivity == null
+        if (intent?.action == MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA_SECURE ||
+            intent?.getBooleanExtra(EXTRA_SECURE, false) == true || keyguard.isKeyguardLocked) enterSecure()
         store = SettingsStore(this)
         library = LutLibrary(this)
         cur = store.current ?: defaultSettings()
@@ -151,7 +157,7 @@ class CameraActivity : ComponentActivity() {
         sound.load(MediaActionSound.SHUTTER_CLICK)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() = done()
+            override fun handleOnBackPressed() = if (standalone) close() else done()
         })
 
         gradeExec.execute {
@@ -171,6 +177,58 @@ class CameraActivity : ComponentActivity() {
     private val askCamera = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (ok) startCamera()
         else { toast("카메라 권한이 있어야 앱 카메라를 쓸 수 있어요"); status.text = "카메라 권한 없음 · ‘기본 카메라’를 쓰세요" }
+    }
+
+    // ───────────────────────── 잠금화면 ─────────────────────────
+
+    private lateinit var keyguard: KeyguardManager
+    /** 잠금화면 위에 떠 있음: 카메라만 쓰고, 사진 보기·편집은 잠금 해제 후에만 */
+    private var secure = false
+    /** 편집 화면 없이 혼자 열림 */
+    private var standalone = false
+
+    private fun enterSecure() {
+        secure = true
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 잠긴 채로 앞으로 불려 나왔으면 (잠금화면 바로가기) 잠금화면 위에 띄움
+        if (!secure && keyguard.isKeyguardLocked) enterSecure()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 화면이 꺼지거나 나가면 다음엔 잠금화면이 먼저 (켜 둔 카메라가 잠금화면을 대신하지 않게)
+        if (secure) { secure = false; setShowWhenLocked(false); setTurnScreenOn(false) }
+    }
+
+    /** 잠겨 있으면 잠금 해제(지문·얼굴·PIN)부터 받고 실행 */
+    private fun unlockThen(action: () -> Unit) {
+        if (!keyguard.isKeyguardLocked) { action(); return }
+        keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() { runOnUiThread(action) }
+        })
+    }
+
+    /** 편집 화면으로 (찍은 원본을 열거나, 기본 카메라로 찍기) */
+    private fun openEditor(system: Boolean = false) = unlockThen {
+        if (!standalone) { done(system); return@unlockThen }
+        store.current = cur
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            lastOriginal?.let { putExtra(EXTRA_OPEN, it) }
+            if (system) putExtra(EXTRA_SYSTEM, true)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
+        finish()
+    }
+
+    /** 혼자 열렸을 때 뒤로: 그냥 닫기 (잠금화면이면 잠금화면으로) */
+    private fun close() {
+        store.current = cur
+        finish()
     }
 
     override fun onResume() { super.onResume(); orientation.enable() }
@@ -669,7 +727,7 @@ class CameraActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(10), dp(12), dp(10), dp(8))
         }
-        top.addView(chip("← 편집", false) { done() })
+        top.addView(chip("← 편집", false) { openEditor() })
         flashBtn = chip("플래시 끔", false) {
             flashMode = when (flashMode) {
                 ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
@@ -690,7 +748,7 @@ class CameraActivity : ComponentActivity() {
         modeBtn = chip("사진", false) { setVideoMode(!videoMode) }
         top.addView(modeBtn)
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        top.addView(chip("기본 카메라", false) { done(system = true) })
+        top.addView(chip("기본 카메라", false) { openEditor(system = true) })
         col.addView(top)
         col.addView(stage, LinearLayout.LayoutParams(-1, 0, 1f))
 
@@ -744,7 +802,7 @@ class CameraActivity : ComponentActivity() {
             scaleType = ImageView.ScaleType.CENTER_CROP
             clipToOutline = true
             background = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(Color.parseColor("#222222")) }
-            setOnClickListener { if (lastOriginal != null) done() else toast("아직 찍은 사진이 없어요") }
+            setOnClickListener { if (lastOriginal != null) openEditor() else toast("아직 찍은 사진이 없어요") }
         }
         controls.addView(thumb, FrameLayout.LayoutParams(dp(56), dp(56), Gravity.START or Gravity.CENTER_VERTICAL))
         shutterView = View(this).apply {
@@ -796,6 +854,10 @@ class CameraActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_SYSTEM = "system"
+        /** 잠금화면에서 열기 */
+        const val EXTRA_SECURE = "secure"
+        /** 혼자 열린 카메라 → 편집 화면: 열 원본 */
+        const val EXTRA_OPEN = "open"
 
         fun defaultSettings() = Settings(
             "look:TEAL_ORANGE", "틸앤오렌지", 1f, 0f, 0.15f, MakerParams(), Frame.ORIGINAL, false, 0.5f, 0.5f,

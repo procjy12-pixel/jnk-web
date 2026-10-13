@@ -3,6 +3,7 @@ package kr.co.jnkcorp.filter
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.KeyguardManager
 import android.content.ActivityNotFoundException
 import android.content.ContentValues
 import android.content.Intent
@@ -156,6 +157,8 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 잠금화면 바로가기로 열렸으면: 편집 화면(사진들)은 건너뛰고 카메라만 잠금화면 위에
+        if (intent?.action == Intent.ACTION_MAIN && isLocked()) { openLockCamera(); finish(); return }
         // 지난번에 앱이 꺼졌으면, 다른 걸 만들기 전에 먼저 이유를 보여 줌
         val report = CrashReport.pending(this)
         if (report != null) { showCrashScreen(report, savedInstanceState); return }
@@ -245,8 +248,51 @@ class MainActivity : Activity() {
         }
 
         CrashReport.step(this, "main:ui-ready")
+        // 혼자 열렸던 카메라에서 넘어온 거면 그 사진(또는 기본 카메라)으로
+        val handoff = savedInstanceState == null && handleCameraHandoff(intent)
         // 앱을 열자마자 카메라
-        if (savedInstanceState == null && intent?.action != Intent.ACTION_SEND && allowAutoCamera) capture()
+        if (savedInstanceState == null && !handoff && intent?.action != Intent.ACTION_SEND && allowAutoCamera) capture()
+    }
+
+    private fun isLocked() = getSystemService(KeyguardManager::class.java)?.isKeyguardLocked == true
+    private var lockCameraAt = 0L
+
+    private fun openLockCamera() {
+        lockCameraAt = android.os.SystemClock.elapsedRealtime()
+        setShowWhenLocked(true)   // 이 화면은 바로 닫히니 잠금화면 위에서 잠깐만
+        startActivity(Intent(this, CameraActivity::class.java).putExtra(CameraActivity.EXTRA_SECURE, true))
+        overridePendingTransition(0, 0)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 앱이 이미 떠 있는데 잠긴 채로 불려 나오면 (잠금화면 바로가기) 편집 화면 대신 카메라
+        if (!isFinishing && isLocked() && android.os.SystemClock.elapsedRealtime() - lockCameraAt > 3000) {
+            lockCameraAt = android.os.SystemClock.elapsedRealtime()
+            startActivity(Intent(this, CameraActivity::class.java).putExtra(CameraActivity.EXTRA_SECURE, true))
+            overridePendingTransition(0, 0)
+        }
+    }
+
+    /** 혼자 열렸던 카메라에서 "편집" → 찍은 원본 열기 / 기본 카메라 */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (::store.isInitialized) handleCameraHandoff(intent)
+    }
+
+    private fun handleCameraHandoff(i: Intent?): Boolean {
+        @Suppress("DEPRECATION")
+        val open = i?.getParcelableExtra<Uri>(CameraActivity.EXTRA_OPEN)
+        val system = i?.getBooleanExtra(CameraActivity.EXTRA_SYSTEM, false) == true
+        i?.removeExtra(CameraActivity.EXTRA_OPEN); i?.removeExtra(CameraActivity.EXTRA_SYSTEM)
+        syncFromStore()
+        when {
+            system -> systemCapture()
+            open != null -> { autoSaveNext = false; load(open) }
+            else -> return false
+        }
+        return true
     }
 
     override fun onPause() {

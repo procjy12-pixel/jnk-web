@@ -28,10 +28,20 @@
                 <data android:mimeType="video/*" />
             </intent-filter>
         </activity>
+        <!-- 다른 앱의 "카메라 열기"·잠금화면 카메라로도 고를 수 있게 -->
         <activity
             android:name=".CameraActivity"
-            android:exported="false"
+            android:exported="true"
             android:screenOrientation="portrait"
-            android:theme="@style/AppTheme" />
+            android:theme="@style/AppTheme">
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.media.action.STILL_IMAGE_CAMERA_SECURE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

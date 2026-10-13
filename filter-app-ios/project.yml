@@ -7,7 +7,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1"
+    MARKETING_VERSION: "1.2"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   FOFilter:
@@ -15,6 +15,7 @@ targets:
     platform: iOS
     sources:
       - path: FOFilter
+      - path: Shared
       - path: Resources/Assets.xcassets
       # 안드로이드판과 같은 LUT·글꼴 파일을 그대로 씀
       - path: ../filter-app-android/app/src/main/assets/luts
@@ -48,6 +49,31 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: NO
+    dependencies:
+      # 잠금화면·제어 센터 컨트롤 (iOS 18+, 그 아래 버전에선 그냥 무시됨)
+      - target: FOFilterControls
+  FOFilterControls:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Controls
+      - path: Shared
+    info:
+      path: Support/Controls-Info.plist
+      properties:
+        CFBundleDisplayName: FOFilter
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: kr.co.jnkcorp.fofilter.controls
+        PRODUCT_NAME: FOFilterControls
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
   FOFilterTests:
     type: bundle.unit-test
     platform: iOS

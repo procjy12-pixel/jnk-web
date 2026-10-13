@@ -180,6 +180,40 @@ class LaunchTest {
         ctl.pause().stop().destroy()
     }
 
+    private fun setLocked(locked: Boolean) {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        shadowOf(app.getSystemService(android.app.KeyguardManager::class.java)).setKeyguardLocked(locked)
+    }
+
+    /** 잠금화면 바로가기: 잠긴 채로 앱을 열면 편집 화면 없이 카메라만 잠금화면 위에 */
+    @Test fun lockedLaunchOpensCameraOverLockScreen() {
+        setLocked(true)
+        try {
+            val ctl = Robolectric.buildActivity(MainActivity::class.java, Intent(Intent.ACTION_MAIN)).create()
+            val next = shadowOf(ctl.get()).nextStartedActivity
+            org.junit.Assert.assertEquals(CameraActivity::class.java.name, next.component?.className)
+            org.junit.Assert.assertTrue(next.getBooleanExtra(CameraActivity.EXTRA_SECURE, false))
+            org.junit.Assert.assertTrue(ctl.get().isFinishing)
+
+            val cam = Robolectric.buildActivity(CameraActivity::class.java, next).setup()
+            org.junit.Assert.assertTrue(shadowOf(cam.get()).showWhenLocked)
+            // 화면이 꺼지면 다음엔 잠금화면이 먼저
+            cam.pause().stop()
+            org.junit.Assert.assertFalse(shadowOf(cam.get()).showWhenLocked)
+            cam.destroy()
+        } finally {
+            setLocked(false)
+        }
+    }
+
+    /** 잠겨 있지 않으면 평소처럼 (잠금화면 위에 띄우지 않음) */
+    @Test fun unlockedCameraIsNormal() {
+        setLocked(false)
+        val cam = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
+        org.junit.Assert.assertFalse(shadowOf(cam.get()).showWhenLocked)
+        cam.pause().stop().destroy()
+    }
+
     @Test fun cameraActivityStarts() {
         val ctl = Robolectric.buildActivity(CameraActivity::class.java, Intent()).setup()
         ShadowLooper.idleMainLooper()
