@@ -38,7 +38,7 @@ struct Preset {
 enum Presets {
     static let all: [Preset] = [
         Preset(path: "leica/leica_teal", name: "라이카 틸", sub: "Leica Teal", category: .leica, grain: 0, vignette: 0.36),
-        Preset(path: "leica/leica_eternal", name: "라이카 이터널", sub: "Leica Eternal", category: .leica, grain: 0, vignette: 0.34),
+        Preset(path: "leica/leica_silver", name: "라이카 실버", sub: "Leica Silver", category: .leica, grain: 0, vignette: 0.34),
         Preset(path: "leica/leica_contemporary", name: "라이카 컨템퍼러리", sub: "Leica Contemporary · CNT", category: .leica, grain: 0, vignette: 0.27),
         Preset(path: "leica/leica_classic", name: "라이카 클래식", sub: "Leica Classic · CLS", category: .leica, grain: 0, vignette: 0.25),
     ]

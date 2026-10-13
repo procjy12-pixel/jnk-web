@@ -37,12 +37,26 @@ final class Renderer {
     let queue: MTLCommandQueue?
     let context: CIContext
     let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+    /// 불투명한 흑백 노이즈 타일 (512², 끝없이 반복). CIRandomGenerator 는 알파도 무작위라
+    /// 색 행렬이 알파로 나누면서 값이 튀어서 직접 만듭니다.
+    private let noiseTile: CIImage
 
     private init() {
         device = MTLCreateSystemDefaultDevice()
         queue = device?.makeCommandQueue()
         let opts: [CIContextOption: Any] = [.cacheIntermediates: false, .name: "FOFilter"]
         if let device { context = CIContext(mtlDevice: device, options: opts) } else { context = CIContext(options: opts) }
+
+        let n = 512
+        var rng = SystemRandomNumberGenerator()
+        let px = (0..<(n * n)).map { _ in UInt8.random(in: 0...255, using: &rng) }
+        let cg = CGDataProvider(data: Data(px) as CFData).flatMap {
+            CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 8, bytesPerRow: n,
+                    space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGBitmapInfo(rawValue: 0),
+                    provider: $0, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        }
+        let tile = cg.map { CIImage(cgImage: $0, options: [.colorSpace: NSNull()]) } ?? CIImage(color: CIColor(red: 0.5, green: 0.5, blue: 0.5))
+        noiseTile = tile.applyingFilter("CIAffineTile", parameters: [kCIInputTransformKey: NSValue(cgAffineTransform: .identity)])
     }
 
     // MARK: 자르기
@@ -124,9 +138,8 @@ final class Renderer {
 
     /// 0.5 를 중심으로 ±진폭/2 인 흑백 노이즈 (오버레이 합성이라 중간톤에서 안드로이드의 더하기와 같은 세기)
     private func grainImage(extent: CGRect, amplitude a: CGFloat, seed: Int) -> CIImage {
-        let noise = CIFilter(name: "CIRandomGenerator")!.outputImage!
-        let shift = CGAffineTransform(translationX: CGFloat((seed * 7919) % 4096), y: CGFloat((seed * 104_729) % 4096))
-        return noise.transformed(by: shift)
+        let shift = CGAffineTransform(translationX: CGFloat((seed * 7919) % 512), y: CGFloat((seed * 104_729) % 512))
+        return noiseTile.transformed(by: shift)
             .applyingFilter("CIColorMatrix", parameters: [
                 "inputRVector": CIVector(x: a, y: 0, z: 0, w: 0),
                 "inputGVector": CIVector(x: a, y: 0, z: 0, w: 0),

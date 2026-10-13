@@ -70,10 +70,13 @@ final class RenderTests: XCTestCase {
         let img = solid(CIColor(red: 0.5, green: 0.5, blue: 0.5), 120, 120)
         let px = r.rgbaPixels(r.apply(img, PreparedGrade(lut: nil, grain: 1, vignette: 0)))
         let m = mean(px)
-        XCTAssertEqual(m.x, mean(r.rgbaPixels(img)).x, accuracy: 3)
+        let before = mean(r.rgbaPixels(img))
         var varSum = 0.0
         for i in 0..<(px.count / 4) { let d = Double(px[i * 4]) - m.x; varSum += d * d }
-        XCTAssertGreaterThan(sqrt(varSum / Double(px.count / 4)), 2)
+        let sd = sqrt(varSum / Double(px.count / 4))
+        XCTAssertEqual(m.x, before.x, accuracy: 3, "평균 \(m) / 원래 \(before) / 표준편차 \(sd)")
+        XCTAssertGreaterThan(sd, 2, "평균 \(m) / 원래 \(before)")
+        XCTAssertLessThan(sd, 20)
     }
 
     func testWatermarkDrawsInside() {

@@ -113,6 +113,7 @@ class LutTest {
         assertEquals(null, Presets.migrateKey("look:LEICA_MONO"))
         assertEquals(null, Presets.migrateKey("preset:bw/kodak_tri-x_400"))
         assertEquals("preset:leica/leica_teal", Presets.migrateKey("preset:leica/leica_teal"))
+        assertEquals("preset:leica/leica_silver", Presets.migrateKey("preset:leica/leica_eternal"))
         assertEquals("file:내 룩.cube", Presets.migrateKey("file:내 룩.cube"))
     }
 

@@ -38,7 +38,8 @@ jobs:
           print(c[-1][1])')
           echo "simulator $UDID"
           xcodebuild test -project FOFilter.xcodeproj -scheme FOFilter -destination "id=$UDID" \
-            CODE_SIGNING_ALLOWED=NO -quiet
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test.log | grep -E "error:|failed|passed \(|Executed|TEST (SUCCEEDED|FAILED)" || true
+          grep -q "TEST SUCCEEDED" test.log
 
       - name: 서명 안 한 .ipa 만들기
         run: |

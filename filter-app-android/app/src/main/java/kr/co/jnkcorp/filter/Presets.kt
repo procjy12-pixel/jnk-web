@@ -18,7 +18,7 @@ object Presets {
 
     val all = listOf(
         Preset("leica/leica_teal", "라이카 틸", "Leica Teal", LEICA, 0f, 0.36f),
-        Preset("leica/leica_eternal", "라이카 이터널", "Leica Eternal", LEICA, 0f, 0.34f),
+        Preset("leica/leica_silver", "라이카 실버", "Leica Silver", LEICA, 0f, 0.34f),
         Preset("leica/leica_contemporary", "라이카 컨템퍼러리", "Leica Contemporary · CNT", LEICA, 0f, 0.27f),
         Preset("leica/leica_classic", "라이카 클래식", "Leica Classic · CLS", LEICA, 0f, 0.25f),
     )
@@ -28,7 +28,7 @@ object Presets {
         key == null -> null
         key == "look:LEICA_CLASSIC" -> "preset:leica/leica_classic"
         key == "look:LEICA_CONTEMPORARY" -> "preset:leica/leica_contemporary"
-        key == "look:LEICA_ETERNAL" -> "preset:leica/leica_eternal"
+        key == "preset:leica/leica_eternal" -> "preset:leica/leica_silver"   // 1.0 에서 이름을 잘못 붙였던 것 (색은 같음)
         key.startsWith("look:") -> key.takeIf { k -> Look.values().any { "look:${it.name}" == k } }
         key.startsWith("preset:") -> key.takeIf { k -> all.any { "preset:${it.path}" == k } }
         else -> key
